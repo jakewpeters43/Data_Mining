@@ -1,0 +1,372 @@
+---
+title: "FInal_Edit_Main"
+author: "Jake Peters"
+date: "4/28/2022"
+output: html_document
+---
+---
+title: "Final_Project_Edit4"
+author: "Jake Peters & Uyanga (Soka) Naranbaatar"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(ISLR2)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(dslabs)
+library(stringi)
+library(MASS) #needed for LDA/QDA
+library(leaps) # Needed for Subset Selection
+library(ROCR)
+library(pROC)
+library(glmnet) # Needed for Ridge and Lasso
+library(readxl)
+library(readr)
+library(dplyr)
+library(DataCombine) #merge function
+library(neuralnet)
+library(e1071)
+```
+
+
+# Tweet Mining and Sentiment Analysis
+
+```{r}
+df_tweets <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/tweets_EST.csv")
+stocks <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/stocksdf.csv")
+tweets <- df_tweets %>% dplyr::select(tweet, link, replies_count, likes_count, retweets_count, date)
+tweets <- tweets %>% mutate(Date = as.Date(date))
+clean <- left_join(tweets,stocks, by= "Date")
+clean <- clean %>% 
+           filter(Date >= ymd("2017-11-10"))
+clean <- clean %>% distinct(link, .keep_all = TRUE)
+```
+
+```{r}
+utf <- clean %>%
+    mutate_at(vars(tweet), function(x){gsub('[^ -~]', '', x)})
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets")
+
+tweet_words %>% 
+  count(word) %>%
+  arrange(desc(n))
+```
+
+
+```{r}
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets") %>%
+  filter(!word %in% stop_words$word ) 
+```
+
+```{r}
+tweet_words %>% 
+  count(word) %>%
+  top_n(400, n) %>%
+  mutate(word = reorder(word, n)) %>%
+  arrange(desc(n))
+```
+
+tesla words: tesla, @tesla, car, production, @teslarati, cars, engine, @thirdrowtesla, future, power, energy, engines, electric, engineering, autopilot, drive, range, ai, factory, speed, computer, fast, rate, product, battery, control, selfdriving, vehicle, @teslagong, cybertruck, improvements, driving, hardware, testing, data, @teslatruth, gas, @tesmaniancom, reusable, road, fuel, move, mode, vehicles, moving, sustainable, traffic, faster
+
+```{r}
+# tesla score values
+tweet_words_TF <- tweet_words %>% mutate(word_in_tesla = word %in% c("tesla","@teslaownerssv", "@tesla", "car", "production", "@teslarati", "cars", "engine"," @thirdrowtesla", "future", "power", "energy", "engines", "electric", "engineering", "autopilot", "drive", "range", "ai", "factory", "speed", "computer", "fast"," rate", "product", "battery", "control", "selfdriving", "vehicle", "@teslagong", "cybertruck", "improvements", "driving", "hardware", "testing", "data", "@teslatruth", "gas", "@tesmaniancom", "reusable", "road", "fuel", "move", "mode", "vehicles", "moving", "sustainable", "traffic", "faster"))
+tfcount <- tweet_words_TF %>% group_by(link) %>% summarize(tesla_score = sum(word_in_tesla)) %>% ungroup()
+scored <- left_join(utf, tfcount, by = "link")
+```
+
+Tweet sentiment values:
+```{r}
+ afinn <- get_sentiments("afinn")
+sentiment_counts <- tweet_words %>%
+  left_join(afinn, by = "word") %>% filter(value != "NA")
+# add up sentiments for each tweet
+sentiment_sum <- sentiment_counts %>% group_by(link) %>% summarize(sentiment_score = sum(value)) %>% ungroup()
+scored_tesla_and_sentiments <- left_join(scored, sentiment_sum, by = "link")
+```
+
+```{r}
+#write.csv(scored_tesla_and_sentiments, "C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/scored_tesla_and_sentiments.csv", row.names = FALSE)
+```
+
+
+# Getting the data ready
+
+We are making a variable teslaDir. If the price went up on the day, it will be "up," otherwise "down."
+
+```{r}
+data <- scored_tesla_and_sentiments
+set.seed(51)
+data <- data %>% filter(!is.na(teslaDiff.p))
+data <- data %>% mutate(teslaDir = if_else(teslaDiff >= 0, "up","down"),
+                       dogeDir = if_else(dogeDiff >= 0, "up","down"))
+data$teslaDir <- as.factor(data$teslaDir)
+data$dogeDir <- as.factor(data$dogeDir)
+# write.csv(data,"/Users/uyanganaranbaatar/Documents/A DATA318/directionsdf", row.names = FALSE)
+```
+
+
+Here, we are making the data ready ready.
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/directionsdf.csv")
+data <- na.omit(data)
+data$teslaDir <- as.factor(data$teslaDir)
+data$dogeDir <- as.factor(data$dogeDir)
+data <- data %>% filter(!is.na(teslaDiff.p))
+test_index <- createDataPartition(data$teslaDiff.p, p = 0.20, list = FALSE)
+test_set <- data[test_index,]
+train_set <- data[-test_index,]
+
+data.log <- data %>% mutate(replies_count = log(replies_count),
+                        likes_count = log(likes_count),
+                        retweets_count = log(retweets_count))
+
+test_index <- createDataPartition(data.log$teslaDiff.p, p = 0.20, list = FALSE)
+test_set_log <- data.log[test_index,]
+train_set_log <- data.log[-test_index,]
+```
+
+# Exploratory Analysis
+
+Let's make some basic plots to show if any of our five main variables are related
+```{r}
+ggplot(data = data) + geom_point(aes(x = replies_count, y = teslaDiff.p))
+ggplot(data) + geom_jitter(aes(x = tesla_score, y = teslaDiff.p))
+ggplot(data) + geom_jitter(aes(x = tesla_score, y = sentiment_score))
+ggplot(data) + geom_point(aes(x = likes_count, y = retweets_count))
+ggplot(data) + geom_point(aes(x = log(likes_count), y = log(replies_count)))
+
+hist(data$replies_count)
+hist(log(data$replies_count))
+
+```
+Here, it seems like the relationship between our target variable and the explanatories are mostly noise, while the relationships between the variables, for example log(likes_count) and log_(replies_count) definitely seem to be linear or logarithmic. A reason why the logarithmic data might work well for the twitter data is that the likes, replies, and retweets are all right-skewed, but when taking the logrithm of them, they become normally distributed. 
+
+
+Let's show this to explain the importance of each variable for regression.
+```{r}
+correlations <- train_set %>% select_if(is.numeric) %>%
+  na.omit() %>%
+  cor() %>%                # Computes correlations
+  as_tibble(rownames = "Variable")%>%           # converts from matrix to data.frame
+  dplyr::select(teslaDiff.p,Variable) %>%    # only look at correlations with sale price
+  arrange(desc(teslaDiff.p))
+correlations
+
+regfit_full = regsubsets(teslaDiff.p ~ likes_count + replies_count + retweets_count + tesla_score + sentiment_score, data = data)
+summary(regfit_full)
+```
+
+# REGRESSION
+
+## Linear Model
+
+```{r}
+set.seed(51)
+lm.mod <- lm(teslaDiff.p ~ tesla_score + sentiment_score + replies_count + likes_count + retweets_count, train_set)
+summary(lm.mod)
+lm.pred <- predict(lm.mod, test_set)
+postResample(lm.pred, test_set$teslaDiff.p)
+```
+0.0339106546 0.0007073105 0.0240722161 
+
+
+## Ridge Regression
+
+From class: in ridge regression, we need to standardize our numerical variables
+
+```{r}
+#defining response variable
+y.train <- train_set$teslaDiff.p
+y.test <- test_set$teslaDiff.p
+
+#defining matrix of predictor variables
+x.train <- data.matrix(train_set[, c('likes_count', 'replies_count', 'retweets_count', 'tesla_score', 'sentiment_score')])
+x.test <- data.matrix(test_set[, c('likes_count', 'replies_count', 'retweets_count', 'tesla_score', 'sentiment_score')])
+
+#standardizing the predictor variables
+stan.x.train <- scale(x.train, center = TRUE, scale = TRUE)
+stan.x.test <- scale(x.test, center = TRUE, scale = TRUE)
+```
+
+```{r}
+set.seed(51)
+#perform k-fold cross-validation to find optimal lambda value
+cv_model_ridge <- cv.glmnet(stan.x.train, y.train, alpha = 0)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model_ridge$lambda.min
+best_lambda
+
+#produce plot of test MSE by lambda value
+plot(cv_model_ridge) 
+ridge.mod <- glmnet(stan.x.train, y.train, alpha = 0)
+best.ridge.mod <- glmnet(stan.x.train, y.train, alpha = 0, lambda = best_lambda)
+coef(best.ridge.mod)
+plot(ridge.mod, xvar = "lambda")
+#use fitted best model to make predictions
+ridge.pred <- predict(ridge.mod, s = best_lambda, newx = stan.x.test)
+#best.ridge.pred <- predict(best.ridge.mod, newx = x)
+
+#find SST and SSE
+sst <- sum((y.test - mean(y.test))^2)
+sse <- sum((ridge.pred - y.test)^2)
+#sse.best <- sum((best.ridge.pred - y)^2)
+
+#find R-Squared
+rsq <- 1 - sse/sst
+rsq 
+rmse.ridge <- (y.test-ridge.pred)^2 %>% mean() %>% sqrt()
+rmse.ridge
+```
+
+
+## Lasso Regression
+```{r}
+set.seed(51)
+#performing k-fold cross-validation to find optimal lambda value
+cv_model_lasso <- cv.glmnet(x.train, y.train, alpha = 1)
+lasso.mod <- glmnet(x.train, y.train, alpha = 1)
+
+#finding optimal lambda value that minimizes test MSE
+best_lambda <- cv_model_lasso$lambda.min
+
+#producing plot of test MSE by lambda value
+plot(lasso.mod)  
+best.lasso.mod <- glmnet(x.train, y.train, alpha = 1, lambda = best_lambda)
+coef(best.lasso.mod)
+
+#predicting with the lasso model
+lasso.pred <- predict(lasso.mod, s = best_lambda, newx = x.test)
+
+#finding SST and SSE
+sst <- sum((y.test - mean(y.test))^2)
+sse <- sum((lasso.pred - y.test)^2)
+
+#finding R-Squared
+rsq <- 1 - sse/sst
+rsq
+
+#finding RMSE
+rmse.lasso <- (y.test-lasso.pred)^2 %>% mean() %>% sqrt()
+rmse.lasso
+```
+
+Lasso regression is slightly better than Ridge in terms of R squared and RMSE.
+
+chosen inputs for linear regression
+
+```{r}
+predict(lm.mod, data.frame(replies_count = 1000, retweets_count = 500, likes_count = 300000, tesla_score = 6, sentiment_score = 6))
+
+```
+will increasing the number of replies and tesla_score increase our value?
+```{r}
+predict(lm.mod, data.frame(replies_count = 10000, retweets_count = 500, likes_count = 300000, tesla_score = 10, sentiment_score = 6))
+```
+This did increase our value by .001!
+
+What if we decrease our variables?
+```{r}
+predict(lm.mod, data.frame(replies_count = 10, retweets_count = 10, likes_count = 10, tesla_score = 0, sentiment_score = 0))
+```
+This value was less than our variables, but not to the level that one might expect, perhaps only 5 times less than very high values.
+## Neural Network Regression
+
+```{r}
+nn.mod <- neuralnet(teslaDiff.p ~ tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, data = train_set, hidden = c(2,1), linear.output = TRUE)
+```
+
+```{r}
+nn.pred <- predict(nn.mod, test_set)
+ggplot(test_set) +
+  geom_jitter(aes(x = nn.pred, y = teslaDiff.p)) +
+  geom_abline(slope = 1, color = "red") +
+  labs(x = "Predicted", y = "Actual")
+y.test <- test_set$teslaDiff.p
+sst <- sum((y.test - mean(y.test))^2)
+sse <- sum((nn.pred - y.test)^2)
+rsq <- 1 - sse/sst
+rsq
+rmse <- (test_set$teslaDiff.p - nn.pred)^2 %>% mean() %>% sqrt()
+rmse
+```
+
+RMSE is litter higher, meaning that it has more error and little worse than Lasso model.
+
+
+
+# CLASSIFICATION
+
+
+## Log transformation for QDA
+
+As you can see the correlation is different, meaning that we have different covariance so we will use QDA. To use QDA, we will need to use boxcox transformation so we can find our best lambda.
+
+```{r}
+hist(data$likes_count)
+hist(data$replies_count)
+hist(data$retweets_count)
+```
+
+```{r}
+hist(log(data$likes_count))
+hist(log(data$replies_count))
+hist(log(data$retweets_count))
+hist(log(data$retweets_count))
+```
+As we can see, taking the log of those tweet related variables made their distributions closer to normal.
+
+The histograms below show that our stock related variables are highly right skewed.
+```{r}
+hist(data$teslaDiff.p)
+hist(data$teslaVolDiff.p)
+hist(data$dogeDiff.p)
+hist(data$dogeVolDiff.p)
+```
+
+## LDA
+
+```{r}
+set.seed(51)
+model.part <- teslaDir ~ likes_count + replies_count + retweets_count + tesla_score + sentiment_score
+lda.mod <- lda(model.part, data=train_set) 
+plot (lda.mod) # do we want this?
+lda.pred <- predict(lda.mod, test_set) #I need to transform test_set variables to log too?
+lda.class <- lda.pred$class
+table (lda.class, test_set$teslaDir)
+mean(lda.class == test_set$teslaDir)
+roc(response = test_set$teslaDir, predictor = lda.pred$posterior[,2], plot = TRUE) #area=0.5378
+```
+
+## QDA
+
+```{r}
+set.seed(51)
+qda.mod <- qda(teslaDir ~ likes_count + replies_count + retweets_count + tesla_score + sentiment_score, train_set) #we sticked with train_set not train_set_log
+qda.pred <- predict(qda.mod , test_set)$class
+table(qda.pred , test_set$teslaDir)
+mean(qda.pred == test_set$teslaDir)
+```
+
+## Naive Bayes
+```{r}
+set.seed(51)
+nb <- naiveBayes(teslaDir ~ tesla_score + replies_count + sentiment_score + likes_count + retweets_count, data = train_set)
+nb.pred <- predict(nb, test_set)
+table(nb.pred, test_set$teslaDir)
+postResample(nb.pred, test_set$teslaDir)
+nb
+summary(nb)
+```

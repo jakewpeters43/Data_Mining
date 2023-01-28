@@ -1,0 +1,141 @@
+---
+title: "DATA318Final_Project_Merging_Cleaning"
+author: "Jake Peters & Uyanga (Soka) Naranbaatar"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(ISLR2)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(dslabs)
+library(stringi)
+library(MASS) #needed for LDA/QDA
+library(leaps) # Needed for Subset Selection
+library(ROCR)
+library(pROC)
+library(glmnet) # Needed for Ridge and Lasso
+library(readxl)
+library(readr)
+library(dplyr)
+library(DataCombine) #merge function
+```
+
+
+# Data Cleaning
+
+## Merging & Cleaning Tweets
+
+```{r}
+file_paths1 <- fs::dir_ls("C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/MuskTweets17-20")
+file_contents1 <- list()
+file_paths2 <- fs::dir_ls("C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/MuskTweets21-22")
+file_contents2 <- list()
+```
+
+```{r}
+tweets1 <- file_paths1 %>% 
+  map(function (path) {
+    read_csv(path)
+  })
+tweets2 <- file_paths2 %>% 
+  map(function (path) {
+    read_csv(path)
+  })
+```
+
+```{r}
+df1719 <- as.data.frame(do.call(rbind, tweets1))
+df2021 <- as.data.frame(do.call(rbind, tweets2))
+df2021 <- df2021 %>% select(-"date")
+df2021 <- df2021 %>% rename(date = datetime)
+# converting both dates to eastern time, then dropping time zone
+df1719 <- df1719 %>% mutate(date = as.POSIXct(date,format="%Y-%m-%d%H:%M:%S", tz = "GMT"))
+df1719 <- df1719 %>% mutate(date = format(date, tz="America/New_York"))
+df2021 <- df2021 %>% mutate(date = as.POSIXct(date,format="%Y-%m-%d%H:%M:%S", tz = "Asia/Dubai"))
+df2021 <- df2021 %>% mutate(date = format(date, tz="America/New_York"))
+new1 <- c(rep(0, nrow(df2021)))
+new2 <- c(rep(0, nrow(df2021)))
+new3 <- c(rep(0, nrow(df2021)))
+df2021 <- cbind(df2021, new1,new2,new3)
+#df_new <- cbind(df, new1, new2)
+setdiff(df1719, df2021)
+```
+
+```{r}
+#df1719$...1
+cols_to_drop_2021 <- c("time","mentions", "new1","new2","new3","created_at", "timezone")
+cols_to_drop_1719 <- c("...1", "user_id_str", "day", "hour", "search","created_at", "timezone")
+#df_clean = df[,!(names(df) %in% cols_to_drop)]
+df2021 <- df2021[,!(names(df2021) %in% cols_to_drop_2021)]
+df1719 <- df1719[,!(names(df1719) %in% cols_to_drop_1719)]
+```
+
+```{r}
+df1719 <- df1719 %>% mutate(replies_count = nreplies)
+df1719 <- df1719 %>% mutate(likes_count = nlikes)
+df1719 <- df1719 %>% mutate(retweets_count = nretweets)
+cols_to_drop_1719 <- c("nreplies", "nlikes", "nretweets")
+df1719 <- df1719[,!(names(df1719) %in% cols_to_drop_1719)]
+setdiff(df1719, df2021)
+```
+
+```{r}
+df1721 <- rbind(df1719, df2021)
+write.csv(df1721, "C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/tweets_EST.csv", row.names = FALSE)
+```
+
+```{r}
+dfaltered <- read.csv("C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/df_altered.csv")
+```
+
+```{r}
+dfaltered$day <- as.Date(dfaltered$date)
+dfaltered$year <- year(dfaltered$day)
+dfaltered %>% count(year)
+dfnew <- dfaltered %>% distinct(tweet, .keep_all = TRUE)
+df_tweets <- dfnew %>% 
+           filter(date >= ymd("2017-01-1") & 
+           date < ymd("2022-04-21")) %>%
+  #filter(!retweet) %>%
+  arrange(date)
+```
+
+```{r}
+write.csv(df_tweets, "C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/df_tweets.csv", row.names = FALSE)
+```
+
+
+## Merging Stocks Data
+
+```{r}
+doge <- read.csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/DOGE-USD-17-21.csv")
+doge$Date = as.Date(doge$Date)
+doge$dogeDiff <- doge$Close-doge$Open
+doge$dogeDiff.p <- (doge$Close-doge$Open)/doge$Open
+doge <- PercChange(data=doge, Var="Volume", NewVar="dogeVolDiff.p", slideBy=-1, type="proportion")
+doge$dogeVol <- doge$Volume
+doge_select <- doge %>% select(c(Date, dogeVol, dogeDiff, dogeDiff.p,dogeVolDiff.p))
+```
+
+```{r}
+tesla <- read.csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/TSLA-17-21.csv")
+tesla$Date = as.Date(tesla$Date)
+tesla$teslaDiff <- tesla$Close-tesla$Open
+tesla$teslaDiff.p <- (tesla$Close-tesla$Open)/tesla$Open
+tesla <- PercChange(data=tesla, Var="Volume", NewVar="teslaVolDiff.p", slideBy=-1, type="proportion")
+tesla$teslaVol <- tesla$Volume
+tesla_select <- tesla %>% select(c(Date, teslaVol, teslaDiff, teslaDiff.p,teslaVolDiff.p))
+```
+
+```{r}
+stocks_select <- left_join(doge_select, tesla_select, by="Date")
+stocksdf <- stocks_select[-1,]
+#write.csv(stocksdf,"/Users/uyanganaranbaatar/Documents/A DATA318/stocksdf", row.names = FALSE)

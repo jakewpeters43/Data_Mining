@@ -1,0 +1,127 @@
+---
+title: "FInal_Project_Jake"
+author: "Jake Peters"
+date: "4/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(dslabs)
+library(stringi)
+```
+
+```{r}
+df <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/df_tweets.csv")
+df <- df %>% 
+           filter(date >= ymd("2017-11-10"))
+```
+filtering before 9 am for each tweet
+```{r}
+df %>% 
+  mutate(before_9 = hour(date) * 60 + minute(date)) %>% 
+  filter(before_9 < 9*60)
+
+
+```
+
+filtering after 5 pm for each tweet
+```{r}
+df %>% 
+  mutate(after_5 = hour(date) * 60 + minute(date)) %>% 
+  filter(after_5 > 17*60)
+
+```
+between 9 am and 5 pm
+```{r}
+df %>% 
+  mutate(workday = hour(date) * 60 + minute(date)) %>% 
+  filter(workday >= 9*60 & workday <= 17*60)
+
+
+```
+
+```{r}
+df %>%
+  mutate(hour = hour(with_tz(date, "EST"))) %>%
+  count(hour) %>%
+  mutate(percent = n / sum(n)) %>%
+  ungroup %>%
+  ggplot(aes(hour, percent)) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = percent_format()) +
+  labs(x = "Hour of day (EST)", y = "% of tweets")
+```
+```{r}
+df %>%
+  mutate(hour = hour(with_tz(date, "EST"))) %>%
+  count(hour) %>%
+  mutate(percent = n / sum(n)) %>%
+  mutate(cumulative_percent = cumsum(percent))
+```
+```{r}
+df %>%
+  mutate(date = date(with_tz(date, "EST")))
+
+
+
+```
+Is the best way to set to eastern time, then predict the change of stock for today, using yesterdays days tweet??
+Do we need an opening 8 AM stock price? trying to answer these questions.
+
+set to eastern time. then filter for tweets with tesla words, then calculate date
+
+
+```{r}
+utf <- df %>%
+    mutate_at(vars(tweet), function(x){gsub('[^ -~]', '', x)})
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets")
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets") %>%
+  filter(!word %in% stop_words$word ) 
+
+# tesla score values
+tweet_words_TF <- tweet_words %>% mutate(word_in_tesla = word %in% c("tesla","@teslaownerssv", "@tesla", "car", "production", "@teslarati", "cars", "engine"," @thirdrowtesla", "future", "power", "energy", "engines", "electric", "engineering", "autopilot", "drive", "range", "ai", "factory", "speed", "computer", "fast"," rate", "product", "battery", "control", "selfdriving", "vehicle", "@teslagong", "cybertruck", "improvements", "driving", "hardware", "testing", "data", "@teslatruth", "gas", "@tesmaniancom", "reusable", "road", "fuel", "move", "mode", "vehicles", "moving", "sustainable", "traffic", "faster"))
+
+
+tfcount <- tweet_words_TF %>% group_by(link) %>% summarize(tesla_score = sum(word_in_tesla)) %>%
+  ungroup()
+
+scored <- left_join(utf, tfcount, by = "link")
+only_tesla <- scored %>% filter(tesla_score > 0)
+```
+
+
+```{r}
+only_tesla %>%
+  mutate(hour = hour(with_tz(date, "EST"))) %>%
+  count(hour) %>%
+  mutate(percent = n / sum(n)) %>%
+  mutate(cumulative_percent = cumsum(percent))
+```
+
+```{r}
+only_tesla %>%
+  mutate(hour = hour(with_tz(date, "EST"))) %>%
+  count(hour) %>%
+  mutate(percent = n / sum(n)) %>%
+  ungroup %>%
+  ggplot(aes(hour, percent)) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = percent_format()) +
+  labs(x = "Hour of day (EST)", y = "% of tweets")
+```
+Elon tweets by far the most on the 19th hour (7 pm eastern), so we can definitively use his tweets from the previous day to predict the stock price of today in general.
+
+This also means we can convert the date in our main dataset to EST.
+
+

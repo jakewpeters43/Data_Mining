@@ -1,0 +1,93 @@
+---
+title: "Final_Project_Draft"
+author: "Jake Peters"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(dslabs)
+library(stringi)
+```
+
+```{r}
+df_tweets <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/tweets_EST.csv")
+stocks <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/stocksdf.csv")
+tweets <- df_tweets %>% select(tweet, link, replies_count, likes_count, retweets_count, date)
+tweets <- tweets %>% mutate(Date = as.Date(date))
+clean <- left_join(tweets,stocks, by= "Date")
+
+clean <- clean %>% 
+           filter(Date >= ymd("2017-11-10"))
+clean <- clean %>% distinct(link, .keep_all = TRUE)
+```
+
+```{r}
+
+utf <- clean %>%
+    mutate_at(vars(tweet), function(x){gsub('[^ -~]', '', x)})
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets")
+
+
+```
+```{r}
+tweet_words %>% 
+  count(word) %>%
+  arrange(desc(n))
+```
+taking all stop words out
+```{r}
+tweet_words <- utf %>% 
+  unnest_tokens(word, tweet, token = "tweets") %>%
+  filter(!word %in% stop_words$word ) 
+```
+```{r}
+
+tweet_words %>% 
+  count(word) %>%
+  top_n(400, n) %>%
+  mutate(word = reorder(word, n)) %>%
+  arrange(desc(n))
+```
+tesla words: tesla, @tesla, car, production, @teslarati, cars, engine, @thirdrowtesla, future, power, energy, engines, electric, engineering, autopilot, drive, range, ai, factory, speed, computer, fast, rate, product, battery, control, selfdriving, vehicle, @teslagong, cybertruck, improvements, driving, hardware, testing, data, @teslatruth, gas, @tesmaniancom, reusable, road, fuel, move, mode, vehicles, moving, sustainable, traffic, faster
+
+```{r}
+# tesla score values
+tweet_words_TF <- tweet_words %>% mutate(word_in_tesla = word %in% c("tesla","@teslaownerssv", "@tesla", "car", "production", "@teslarati", "cars", "engine"," @thirdrowtesla", "future", "power", "energy", "engines", "electric", "engineering", "autopilot", "drive", "range", "ai", "factory", "speed", "computer", "fast"," rate", "product", "battery", "control", "selfdriving", "vehicle", "@teslagong", "cybertruck", "improvements", "driving", "hardware", "testing", "data", "@teslatruth", "gas", "@tesmaniancom", "reusable", "road", "fuel", "move", "mode", "vehicles", "moving", "sustainable", "traffic", "faster"))
+
+
+tfcount <- tweet_words_TF %>% group_by(link) %>% summarize(tesla_score = sum(word_in_tesla)) %>%
+  ungroup()
+
+scored <- left_join(utf, tfcount, by = "link")
+
+
+```
+tweet sentiment values
+```{r}
+ afinn <- get_sentiments("afinn") %>%
+  select(word, value)
+
+sentiment_counts <- tweet_words %>%
+  left_join(afinn, by = "word") %>% filter(value != "NA")
+# add up sentiments for each tweet
+sentiment_sum <- sentiment_counts %>% group_by(link) %>% summarize(sentiment_score = sum(value)) %>% ungroup()
+
+scored_tesla_and_sentiments <- left_join(scored, sentiment_sum, by = "link")
+
+
+```
+
+```{r}
+write.csv(scored_tesla_and_sentiments, "C:/Users/13204/Documents/Data Mining/Final_Project/DATA318 Final Project/scored_tesla_and_sentiments.csv", row.names = FALSE)
+
+```
+

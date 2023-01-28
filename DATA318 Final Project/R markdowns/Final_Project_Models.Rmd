@@ -1,0 +1,196 @@
+---
+title: "Final_Project_Models"
+author: "Jake Peters"
+date: "4/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(ISLR2)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(dslabs)
+library(stringi)
+library(e1071)
+library(car)
+library(MASS) # neural networks
+library(neuralnet)
+```
+
+```{r}
+df <- read_csv("https://raw.githubusercontent.com/aksoralis/Data-Mining/main/directionsdf.csv")
+
+```
+
+```{r}
+set.seed(51)
+data <- df %>% filter(!is.na(teslaDiff.p))
+data <- data %>% mutate(sentiment_score = replace_na(sentiment_score,0))
+
+test_index <- createDataPartition(data$teslaVolDiff.p, p = 0.20, list = FALSE)
+test_set <- data[test_index,]
+train_set <- data[-test_index,]
+lm.mod <- lm(teslaVolDiff.p ~ tesla_score + lag(dogeDiff.p,1) + sentiment_score + replies_count + likes_count + retweets_count, train_set)
+summary(lm.mod)
+lm.pred <- predict(lm.mod, test_set)
+postResample(lm.pred, test_set$teslaVolDiff.p)
+
+
+vif(lm.mod)
+```
+
+```{r}
+set.seed(51)
+data <- df %>% filter(!is.na(teslaDiff.p))
+data <- data %>% mutate(sentiment_score = replace_na(sentiment_score,0))
+
+test_index <- createDataPartition(data$teslaVol, p = 0.20, list = FALSE)
+test_set <- data[test_index,]
+train_set <- data[-test_index,]
+lm.mod <- lm(teslaDiff.p ~ tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, train_set)
+summary(lm.mod)
+lm.pred <- predict(lm.mod, test_set)
+postResample(lm.pred, test_set$teslaDiff.p)
+
+
+
+
+```
+# naive bayes
+```{r}
+
+set.seed(51)
+data <- df %>% filter(!is.na(teslaDiff.p))
+data <- data %>% mutate(sentiment_score = replace_na(sentiment_score,0))
+fct_relevel(data$teslaDir, c("up", "down"))
+test_index <- createDataPartition(data$teslaDir, p = 0.20, list = FALSE)
+test_set <- data[test_index,]
+train_set <- data[-test_index,]
+
+nb <- naiveBayes(teslaDir~  tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, data = train_set)
+nb.pred <- predict(nb, test_set)
+table(nb.pred, test_set$teslaDir)
+#postResample(nb.pred, test_set$teslaDir)
+nb
+
+summary(nb)
+
+```
+Neural Networks - classification
+
+```{r}
+data <- na.omit(df)
+data.pp <- data %>%
+  preProcess(method = c("center","scale"))
+
+data.ready <- predict(data.pp, data)
+data.ready <- na.omit(data.ready)
+set.seed(21)
+test_index <- createDataPartition(data.ready$teslaDir, p = 0.20, list = FALSE)
+test_set <- data.ready[test_index,]
+train_set <- data.ready[-test_index,]
+
+nn.multi <- neuralnet(teslaDir ~ tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, data = train_set, hidden = c(2,1))
+
+```
+# linear model
+```{r}
+nn.multi.linear <- neuralnet(teslaDiff.p ~ tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, data = train_set, hidden = c(2,1),linear.output = TRUE)
+
+
+```
+
+```{r}
+predictions <- predict(nn.multi.linear, test_set)
+ggplot(test_set) +
+  geom_jitter(aes(x = predictions, y = teslaDiff.p)) +
+  geom_abline(slope = 1, color = "red") +
+  labs(x = "Predicted", y = "Actual")
+
+rmse <- (test_set$teslaDiff.p - predictions)^2 %>% mean() %>% sqrt()
+rmse
+y <- test_set$teslaDiff.p
+sst <- sum((y - mean(y))^2)
+sse <- sum((predictions - y)^2)
+
+rsq <- 1 - sse/sst
+rsq
+```
+
+
+```{r}
+predictions <- predict(nn.multi, test_set)
+nn.pred <- predict(nn.multi, test_set)
+roc(response = test_set$teslaDir, predictor = nn.multi$response, plot = TRUE)
+nn.multi
+plot(nn.multi)
+
+
+
+```
+```{r}
+predictions <- predict(nn.multi, test_set)
+# caret 
+confusionMatrix(data = predictions)
+nn.pred <- predict(nn.multi, test_set)
+table(nn.pred[,1], test_set)
+#postResample(nb.pred, test_set$teslaDir)
+nb
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, x <0.5,0)}))
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, ( x >0.5),1)}))
+predictions <- as.factor(predictions)
+test_set <- test_set %>% mutate(teslaDir =as.factor(teslaDir))
+confusionMatrix(predictions, test_set$teslaDir)
+# ROC curve
+roc(response = test_set$teslaDir, predictor = nn.pred, plot = TRUE)
+```
+
+
+
+```{r}
+# set.seed(51)
+# data <- df %>% filter(!is.na(teslaDiff.p))
+# data <- data %>% mutate(sentiment_score = replace_na(sentiment_score,0))
+# num_cols <- unlist(lapply(data, is.numeric))         # Identify numeric columns
+# num_cols
+# data_num <- data[ , num_cols]
+# data_num <-data_num %>% select(-10)
+# data_num_scaled <- data_num %>% scale(center = TRUE, scale = TRUE)
+# #data_num_scaled <- cbind(data$tweet, data$Date,data$teslaDiff.p,data_num_scaled)
+# data_num_scaled$tweet <- data$tweet
+# data_num_scaled$Date <- data$Date
+# data_num_scaled$teslaDiff.p <- data$teslaDiff.p
+# data_num_scaled <- as.data.frame(data_num_scaled)
+# test_index <- createDataPartition(data_num_scaled$teslaDiff.p, p = 0.20, list = FALSE)
+# test_set <- data_num_scaled[test_index,]
+# train_set <- data_num_scaled[-test_index,]
+# lm.mod <- lm(teslaDiff.p ~ tesla_score + sentiment_score + replies_count + likes_count + retweets_count, train_set)
+# summary(lm.mod)
+# lm.pred <- predict(lm.mod, test_set)
+# postResample(lm.pred, test_set$teslaDiff.p)
+
+```
+
+```{r}
+set.seed(51)
+data <- df %>% filter(!is.na(teslaDiff.p))
+data <- data %>% mutate(sentiment_score = replace_na(sentiment_score,0))
+
+test_index <- createDataPartition(data$teslaVol, p = 0.20, list = FALSE)
+test_set <- data[test_index,]
+train_set <- data[-test_index,]
+lm.mod <- l(teslaDiff.p ~ tesla_score + replies_count  + sentiment_score + likes_count + retweets_count, train_set)
+summary(lm.mod)
+lm.pred <- predict(lm.mod, test_set)
+postResample(lm.pred, test_set$teslaDiff.p)
+
+
+
+```
+
