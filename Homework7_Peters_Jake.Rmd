@@ -1,0 +1,97 @@
+---
+title: "Homework7_Peters_Jake"
+author: "Jake Peters"
+date: "2/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR2)
+library('caret')
+library(tidyverse)
+library('ROCR')
+library('pROC')
+```
+4.8
+14 (a, b, c, f, h)
+```{r}
+#a. 
+head(Auto)
+median(Auto$mpg)
+Auto <- Auto %>% mutate(mpg01 = ifelse(mpg > median(mpg), 1, 0)) 
+Auto <- Auto %>% mutate(mpg01 = as.factor(mpg01))
+Auto
+class(Auto$mpg01)
+
+```
+```{r}
+#b.
+attach(Auto)
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = weight))
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = horsepower))
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = year))
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = acceleration))
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = displacement))
+ggplot(Auto) + geom_jitter(aes(x = mpg01, y = cylinders))
+
+
+```
+Judging from the scatterplots, weight, horsepower, cylinders, and displacement all seem to have negative correlations with mpg01. They will probably be useful in predicting mpg01.
+c.
+```{r}
+attach(Auto)
+sample_size = floor(.8*nrow(Auto))
+set.seed(777)
+picked <- sample(seq_len(nrow(Auto)),size = sample_size)
+train <- Auto[picked,]
+test <- Auto[-picked,]
+train
+test
+
+```
+f.
+```{r}
+#f
+logitmodel <- glm(mpg01 ~ weight + horsepower + displacement + cylinders,data =train,family = "binomial" )
+summary(logitmodel)
+logitmodel.prob <- predict(logitmodel, test, type = "response")
+logitmodel.pred = rep(0,length(test$mpg01))
+logitmodel.pred[logitmodel.prob> 0.5] =1
+table(logitmodel.pred,test$mpg01)
+```
+the error rate is incorrect/total = (3+9) / (26+9+3+41) = 12/79
+= 15.2 % test error rate.
+
+
+h.
+
+```{r}
+control <- trainControl(method = "cv", number = 10, classProbs = TRUE,summaryFunction = twoClassSummary)
+summary(control)
+levels(train$mpg01) <- c("lower_than_median","higher_than_median")
+model_knn_cv <- train(`mpg01` ~ weight + horsepower + displacement + cylinders, 
+                   data = train, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=seq(1,51,4)),
+                   trControl = control,
+                   metric = "ROC")
+ggplot(model_knn_cv, highlight = TRUE)
+model_knn_cv
+y_hat_knn_cv <- predict(model_knn_cv, newdata = test)
+postResample(y_hat_knn_cv,test$`mpg01`)
+
+table(y_hat_knn_cv, test$mpg01)
+
+```
+error rate = (7+4) / (28+7+4+40) = 11/79
+= 13.9 % test error rate
+
+# plot roc curve for funzies
+```{r}
+
+phat_knn <- predict(model_knn_cv, newdata = test, type = "prob")
+roc(response = test$mpg01, predictor = phat_knn$lower_than_median, plot = TRUE)
+
+```
+

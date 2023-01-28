@@ -1,0 +1,282 @@
+---
+title: "Week_12_HomeworkPeters_Jake"
+author: "Jake Peters"
+date: "4/4/2022"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(textclean)
+library(rvest) # read data from internet
+library(dslabs)
+library(caret)
+library(ROCR)
+library(pROC)
+library(ISLR2)
+library(e1071) # for svm and naiveBayes
+library(kernlab)
+library(fpp2) #for naive foreacasting
+library(MASS) #for LDA & QDA
+library(leaps)# murders data
+```
+## Homework
+
+For today's homework, we will be looking at a list of world leaders. The following code downloads a list of current heads of state from Wikipedia and records each country as a row. An important step that I discovered when setting up this example is the `replace_non_ascii` function from the `textclean` package. This converts non-ASCII characters into the closest ASCII character. Before doing this, I was having a huge headache with the difference between an "EN-DASH" and a "HYPHEN".
+
+```{r}
+url <- "https://en.wikipedia.org/wiki/List_of_current_heads_of_state_and_government"
+leaders_raw <- read_html(url) %>%
+  html_nodes("table") 
+
+leaders_raw <- leaders_raw[[2]] %>%
+  html_node("tbody") %>% 
+  html_children()
+
+leaders <- character(length(leaders_raw))
+for (i in seq_along(leaders_raw)) {
+  leaders[i] <- leaders_raw[[i]] %>% html_text() %>% replace_non_ascii(remove.nonconverted = FALSE)
+}
+leaders[1:10]
+leaders
+```
+
+### Problem 1
+
+Use regular expressions to help you count the number of heads of state that have the title of President. Use `sum(str_detect())`.
+
+```{r}
+
+sum(str_detect(leaders, "President"))
+```
+
+### Problem 2 
+
+Use regular expressions to extract the names of all the heads of state that have the title of President. Use `str_match`.
+
+```{r}
+president.pattern <- ".*President - .*\n"
+
+presidents <- str_match(leaders, president.pattern) %>% na.omit()
+
+president.names <- str_replace(presidents, "President - ", "")
+
+president.names <- str_replace(president.names, "\n", "")
+
+president.names <- str_replace(president.names, "\\[.*", "")
+
+president.names
+```
+
+### Problem 3
+
+How many states have both a president and a prime minister? (Note that `.` doesn't match the newline character `\n`, so you will want to explicitly match the `\n\n` with "\\n\\n")
+
+```{r}
+df <- leaders %>% as.data.frame()
+df
+pattern <- c("President", "Prime Minister")
+sum = 0
+for(i in 1:nrow(df)) {
+  
+current <- (str_detect(df[i,1],pattern))
+ sum = rbind(current, sum)
+}
+sum <- as.data.frame(sum)
+final = 0
+for (i in 1:nrow(sum)){
+  if(sum[i,1] + sum[i,2]==2){
+    final = final + 1
+  }
+}
+final
+# order was upside down so I flipped the rows upside down
+sum_correct <- apply(sum,2, rev)
+# deleting initialization row
+sum_correct <- sum_correct[-1,]
+# changing the row names to regular numbers
+row.names(sum_correct) <- 1:nrow(sum_correct)
+```
+88 states have both a president and a prime minister.
+### Problem 4
+
+How many states list Queen Elizabeth II as a head of state?
+
+```{r}
+pattern2 <- c("Queen - Elizabeth II")
+sum2 = 0
+for(i in 1:nrow(df)) {
+  
+current2 <- (str_detect(df[i,1],pattern2))
+ sum2 = rbind(current2, sum2)
+}
+sum2 <- as.data.frame(sum2)
+final2 = 0
+for (i in 1:nrow(sum2)){
+  if(sum2[i,1] ==1){
+    final2 = final2 + 1
+  }
+}
+final2
+# order was upside down so I flipped the rows upside down
+sum2_correct <- apply(sum2,2, rev)
+# deleting initialization row
+sum2_correct <- sum2_correct[-1]
+
+```
+15 governments have Queen Elizabeth II as head of state.
+
+### Problem 5
+
+How many countries have a monarch (King, Queen, Prince, Grand Duke, Emir, Yang di-Pertuan Agong, etc.)? I'll leave it to you to decide what constitutes a monarch.
+
+```{r}
+
+pattern3 <- c("King", "Queen", "Prince", "Grand Duke", "Emir", "Yang di-Pertuan Agong", "Emperor", "Secretary")
+sum3 = 0
+for(i in 1:nrow(df)) {
+  
+current3 <- (str_detect(df[i,1],pattern3))
+ sum3 = rbind(current3, sum3)
+}
+sum3 <- as.data.frame(sum3)
+final3 = 0
+for (i in 1:nrow(sum3)){
+  if(sum3[i,1] + sum3[i,2] + sum3[i,3] + sum3[i,4] + sum3[i,5] + sum3[i,6] + sum3[i,7] + sum3[i,8]  >= 1){
+    final3 = final3 + 1
+  }
+}
+final3
+# order was upside down so I flipped the rows upside down
+sum3_correct <- apply(sum3,2, rev)
+# deleting initialization row
+sum3_correct <- sum3_correct[-1,]
+# changing the row names to regular numbers
+row.names(sum3_correct) <- 1:nrow(sum3_correct)
+
+```
+
+# Homework Problems
+
+## SVM Homework
+
+```{r}
+set.seed(42)
+data(OJ)
+
+test_index <- createDataPartition(OJ$Purchase, p = 0.20, list = FALSE)
+test_set <- OJ[test_index,]
+train_set <- OJ[-test_index,]
+```
+
+1.Fit a support vector classifier to the training data using cost = 0.01, with Purchase as the response and the other variables as predictors. Use the summary() function to produce summary statistics, and describe the results obtained.
+
+```{r}
+svm.model <- svm(Purchase ~ ., data = train_set, cost = .01, kernel = 'linear',probability = TRUE)
+summary(svm.model)
+
+```
+There are 471 support vectors with 2 classes.
+
+2.Calculate the predictions on the test set.
+
+```{r}
+y_pred = predict(svm.model, newdata = test_set, probability = TRUE)
+head(attr(y_pred,"probabilities"))
+```
+```{r}
+cm <- svm(Purchase ~ ., data = OJ)
+confusionMatrix(OJ$Purchase, predict(cm))
+```
+
+3. Use the tune() function to select an optimal cost. Consider values in the range 0.01 to 10.Use set.seed(42) so we all get the same answers.
+
+```{r}
+set.seed(42)
+tuned = tune.svm(Purchase ~ ., data=OJ,cost=seq(from=0.01, to=1,by=0.05))
+print(tuned)
+```
+
+4. Find the best model
+
+```{r}
+bestmod = tuned$best.model
+bestmod
+```
+The best model has a cost of .41 and 538 support vectors.
+
+## Naive Bayes Homework 
+
+```{r}
+SBA_clean <- read_csv("https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/SBA_clean.csv",
+                      col_types = cols(State = col_factor(),
+            NAICS_2d = col_factor(),
+            ApprovalDate = col_date(),
+            Term = col_double(),
+            RealBacked = col_factor(),
+            NoEmp = col_double(),
+            NewExist = col_factor(),
+            UrbanRural = col_factor(),
+            RevLineCr = col_factor(),
+            LowDoc = col_factor(),
+            DisbursementGross = col_double(),
+            Loan_Status = col_factor(),
+            Portion_Backed = col_double()
+          ))
+set.seed(42)
+test_index <- createDataPartition(SBA_clean$Loan_Status, p = 0.20, list = FALSE)
+test_set <- SBA_clean[test_index,]
+train_set <- SBA_clean[-test_index,]
+model.part <- Loan_Status ~ Portion_Backed + NoEmp + NAICS_2d
+```
+
+### 1
+
+Create a _LDA_ model to predict Loan_Status using Portion_Backed, NoEmp, and NAICS_2d as predictors. What's the area under curve of ROC?
+
+```{r}
+
+lda.mod <- lda(model.part, data = train_set)
+p.lda <- predict(lda.mod , test_set)
+roc(response = test_set$Loan_Status, predictor = p.lda$posterior[,2], plot = TRUE) 
+```
+Area of .641 from LDA
+### 2
+
+Create a _QDA_ model to predict Loan_Status using Portion_Backed, NoEmp, and NAICS_2d as predictors. What's the area under curve of ROC?
+
+```{r}
+qda.mod <- qda(model.part, data = train_set)
+p.qda <- predict(qda.mod , test_set)
+roc(response = test_set$Loan_Status, predictor = p.qda$posterior[,2], plot = TRUE)
+```
+Area of .63 with QDA
+
+### 3
+
+Create a _glm_ model to predict Loan_Status using Portion_Backed, NoEmp, and NAICS_2d as predictors. What's the area under curve of ROC?
+
+```{r}
+glm.mod <- qda(model.part, data = train_set)
+p.glm <- predict(glm.mod , test_set, type = "response")
+roc(response = test_set$Loan_Status, predictor = p.glm$posterior[,2], plot = TRUE) 
+```
+Area of .63 with GLM
+### 4
+
+Create a _Naive Bayes_ model to predict Loan_Status using Portion_Backed, NoEmp, and NAICS_2d as predictors. What's the area under curve of ROC? (Hint: use `type="raw"` when predicting)
+
+```{r}
+
+nb.mod <- naiveBayes(model.part, data = train_set)
+p.nb <- predict(nb.mod , test_set, type = "raw")
+roc(response = test_set$Loan_Status, predictor = p.nb[,2], plot = TRUE)
+```
+Area of .643 with Naive Bayes.
+### 5
+
+Comment on your findings. Which model performs the best?
+
+Naive Bayes performs the best at .643! With only two predictors, no models are amazing, but this is the best we have right now. 
+Coming in second place is LDA, which comes out to .641. It is close but slightly worse than NB.
+At .63 are QDA and GLM, which perform worse than our best model, NB. This may be because we are okay with more bias and less variance.

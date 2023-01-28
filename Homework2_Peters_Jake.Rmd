@@ -1,0 +1,164 @@
+---
+title: "Homework2_Peters_Jake"
+author: "Jake Peters"
+date: "1/13/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(tidyverse)
+library(dslabs)
+library(rccdates)
+```
+
+part 1
+3.3.1#1,2,4,6; section 3.5.1#1,2,3; and section 3.6.1#6 (choose just two of the graphs to reproduce).
+3.3
+#1
+blue is an aesthetic in this instance, so blue is a categorical variable which only take 1 value blue, for the expression.
+#2. 
+manufacturur, model, trans, drv, fl, class are categorical
+continous are year, cyl, hw, city, displ
+#4.
+It works but is redundant, so it is better not to do it.
+#6.
+the ggplot creates a variable with values equal to the expression. So it does work in a lot of cases.
+3.5
+#1
+continous variable is converted to a categorial variable, the plot for each separate value has a facet.
+#2.
+combination of drv and cyl. when drv and cyl have no points in scatter plot, they dont show up in this one.
+#3.
+```{r}
+ggplot(data = mpg) + 
+  geom_point(mapping = aes(x = displ, y = hwy)) +
+  facet_grid(drv ~ .)
+
+ggplot(data = mpg) + 
+  geom_point(mapping = aes(x = displ, y = hwy)) +
+  facet_grid(. ~ cyl)
+```
+. ignores the dimension during a facet. so . ~ cyl facets values by cyl on teh x-axis
+3.6
+#6
+
+```{r}
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_smooth(mapping = aes(group = drv), se = FALSE) +
+  geom_point()
+
+
+```
+
+
+```{r}
+
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point(aes(colour = drv)) +
+  geom_smooth(aes(linetype = drv), se = FALSE)
+```
+
+part 2
+Vaccines have helped save millions of lives. In the 19th century, before herd immunization was achieved through vaccination programs, deaths from infectious diseases, like smallpox and polio, were common. However, today, despite all the scientific evidence for their importance, vaccination programs have become somewhat controversial.
+
+The controversy started with a [paper](http://www.thelancet.com/journals/lancet/article/PIIS0140-6736(97)11096-0/abstract) published in 1988 and lead by [Andrew Wakefield](https://en.wikipedia.org/wiki/Andrew_Wakefield) claiming 
+there was a link between the administration of the measles, mumps and rubella (MMR) vaccine, and the appearance of autism and bowel disease. 
+Despite much science contradicting this finding, sensationalists media reports and fear mongering from conspiracy theorists, led parts of the public to believe that vaccines were harmful. Some parents stopped vaccinating their children. This dangerous practice can be potentially disastrous given that the Center for Disease Control and Prevention (CDC) estimates that vaccinations will prevent more than 21 million hospitalizations and 732,000 deaths among children born in the last 20 years (see [Benefits from Immunization during the Vaccines for Children Program Era — United States, 1994-2013, MMWR](https://www.cdc.gov/mmwr/preview/mmwrhtml/mm6316a4.htm)). 
+
+Effective communication of data is a strong antidote to misinformation and fear mongering. In this homework you are going to visualize the trends in the Measles cases.
+
+The data used for these plots were collected, organized and distributed by the [Tycho Project](http://www.tycho.pitt.edu/). They include weekly reported counts data for seven diseases from 1928 to 2011, from all fifty states. We include the yearly totals in the `dslabs` package:
+
+```{r}
+data(us_contagious_diseases)
+```
+
+1. Use the `us_contagious_disease` dataset and `dplyr` tools to create an object called `measles` that stores only the Measles data, includes a per 100,000 people rate, and removes Alaska and Hawaii since they only became states in the late 1950s. The formula for the rate should be: 
+$$
+rate = \frac{count}{(\frac{weeks.reporting}{52})*(\frac{population}{100,000})}
+$$
+
+```{r}
+## Your code here
+measles <- us_contagious_diseases %>% filter(disease == "Measles") %>% filter(state != "Alaska" & state != "Hawaii") %>%
+  mutate(rate = count/((weeks_reporting/52) * (population/100000))) 
+measles
+```
+
+2. Plot the Measles disease rate against year for California. Find out when the Measles vaccine was introduced and add a vertical line to the plot to show this year. 
+
+```{r}
+## measles vaccine introduced 1963
+measlesdf <- as.data.frame(measles)
+ggplot(filter(measlesdf,state=="California")) + geom_point(aes(x=year, y =rate )) + geom_vline(mapping = aes(x=year,xintercept = 1963))
+
+```
+
+3. Note these rates start off as counts. For larger counts we can expect more variability. There are statistical explanations for this which we don't discuss here, but transforming the data might help stabilize the variability such that it is closer across levels. For 1950, 1960, and 1970, plot the histograms of the measles rates across states (one histogram per year; facet_grid might be helpful) with and without the square root transformation. Which seems to have more similar variability across years? (For scaling, use `scale_x_sqrt()`)
+
+```{r}
+## Your code here
+measlesdf3 <- measlesdf %>% filter(year == 1950 | year ==1960 | year == 1970)
+measlesdf3
+ggplot(measlesdf3, aes(x = rate)) +geom_histogram() + facet_grid(year~.)
+# square root dist
+ggplot(measlesdf3, aes(x = rate)) +geom_histogram() + facet_grid(year~.) + scale_x_sqrt()
+
+```
+The square root scalar makes it so that there is more similar variability across the years.
+
+4. Plot the Measles disease rate per year for California. Use the the square root transformation. 
+Find out when the Measles vaccine was introduced and add a vertical line to the plot to show this year. This will be the same plot as #2 with a different y axis scale.
+
+```{r}
+## Your code here
+ggplot(filter(measlesdf,state=="California")) + geom_point(aes(x=year, y =rate )) + geom_vline(mapping = aes(x=year,xintercept = 1963)) + scale_y_sqrt() 
+
+```
+
+5. Now, this is just California. Does the pattern hold for other states? Use boxplots (one for each year) to get an idea of the distribution of rates for each year, and see if the pattern holds across states. In order to get R to separate boxplots for each year, we need to convert year from a numeric variable to a categorical variable (called a factor in R). To do this, use: `factor(year)`.
+
+```{r}
+## Your code here
+ggplot(measlesdf, aes(x=factor(year), y=rate)) + geom_point(aes(x=factor(year), y =rate )) + scale_y_sqrt() + geom_boxplot()
+
+```
+
+6. One problem with the boxplot is that it does not let us see state-specific trends. Make a plot showing the trends for all states. Add the US average to the plot. To keep the plot from being too busy, make the lines for each state a light gray and adjust the alpha (transparency). 
+
+Hints: 
+a) The US average should be stored in a separate data frame.
+b) There are missing values in the data that should be filtered out.
+
+```{r}
+## Your code here
+df <- measlesdf %>% select(rate, year,state) 
+is.na(df)
+df2 <- df %>% filter(!is.na(df))
+df2
+df2 <- df2 %>% group_by(year) %>% summarize_at(vars(rate),list(average = mean))
+df2
+ggplot(df) + geom_line(aes(x=year,y=rate),alpha = .3) +facet_grid(.~state) +geom_line(data = df2,aes(x=year,y=average))
+
+
+
+```
+
+7. One problem with the plot above is that we can't distinguish states from each other. There are just too many. We have three variables to show: year, state and rate. If we use the two dimensions (x and y) to show year and state then we need something other than vertical or horizontal position to show the rates. Try using color. 
+
+Hints: 
+a) Use the the geom `geom_tile` to tile the plot with colors (actually the fill aesthetic) representing disease rates. 
+b) Use `scale_fill_gradient(trans = "sqrt")` to apply the square root transformation to the fill.
+
+
+```{r}
+## Your code here
+ggplot(df,aes(x=year, y=state)) + geom_line() + geom_tile(aes(fill = rate)) +scale_fill_gradient(trans = "sqrt")
+
+```

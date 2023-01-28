@@ -1,0 +1,189 @@
+---
+title: "Homework10_Peters_Jake"
+author: "Jake Peters"
+date: "3/21/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(MASS) #needed for LDA/QDA
+library(leaps) # Needed for Subset Selection
+library(glmnet) # Needed for Ridge and Lasso
+library(tidyverse)
+library(caret)
+library(ROCR)
+library(pROC)
+library(ISLR2)
+```
+
+
+# Homework - LDA/QDA
+Using the SBA clean data provided below from our previous in-class example, answer the following questions:
+```{r}
+SBA_clean <- read_csv("https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/SBA_clean.csv",
+                      col_types = cols(State = col_factor(),
+            NAICS_2d = col_factor(),
+            ApprovalDate = col_date(),
+            Term = col_double(),
+            RealBacked = col_factor(),
+            NoEmp = col_double(),
+            NewExist = col_factor(),
+            UrbanRural = col_factor(),
+            RevLineCr = col_factor(),
+            LowDoc = col_factor(),
+            DisbursementGross = col_double(),
+            Loan_Status = col_factor(),
+            Portion_Backed = col_double()
+          ))
+set.seed(42)
+test_index <- createDataPartition(SBA_clean$Loan_Status, p = 0.20, list = FALSE)
+test_set <- SBA_clean[test_index,]
+train_set <- SBA_clean[-test_index,]
+
+logistic_model<- glm(Loan_Status ~ Portion_Backed + NoEmp, data = train_set, family = binomial)
+logistic.pred <- predict(logistic_model, newdata = test_set, type = "response")
+roc(response = test_set$Loan_Status, predictor = logistic.pred, plot = TRUE)
+```
+
+1. Use LDA to predict the loan status using Portion_Backed and NoEmp as predictors. Calculate (and plot) the ROC area under the curve of the prediction on the test set. Comment on your findings.
+```{r}
+#Your code here
+lda.fit <- lda(`Loan_Status` ~ Portion_Backed + NoEmp, data = train_set)
+
+lda.pred <- predict(lda.fit, newdata = test_set)
+roc(response = test_set$Loan_Status, predictor = lda.pred$posterior[,2], plot = TRUE)
+```
+LDA has an area under curve ROC value of .607, which is slightly less than the logistic value of .61
+2. Use QDA to predict the loan status using Portion_Backed and NoEmp as predictors. Calculate (and plot) the ROC area under the curve of the prediction on the test set. Comment on your findings.
+
+```{r}
+#Your code here
+qda.fit <- qda(`Loan_Status` ~ Portion_Backed + NoEmp, data = train_set)
+
+qda.pred <- predict(qda.fit, newdata = test_set)
+roc(response = test_set$Loan_Status, predictor = qda.pred$posterior[,2], plot = TRUE)
+```
+QDA here was a ROC area of .6108, which was about as good as logistic regression here!
+
+3. Compare the performance of these three models.
+
+QDA seemed to perform the best, with a ROC area of .6108. Logistic regression was next with a score of .6106. Then came LDA at the worst with a score of .6071. QDA outperformed logistic regression just like it did in class, but it is not as interpretable as the other two, even though it is more flexible.
+
+# Homework - Subset Selection and Shrinkage
+
+```{r}
+FM_housing = read_csv(file = "https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/FM_housing.csv",
+                      col_types = cols(City = "f",
+                                       `Book Section` = "f",
+                                       `State/Province` = "f",
+                                       `Postal Code` = "f",
+                                       `Style` = "f",
+                                       `Garage Type` = "f",
+                                       `Flood Plain` = "f",
+                                       Lake = "f",
+                                       `Master Bedroom Main Flr` ="f",
+                                       `Laundry Location` = "f",
+                                       `High School` = "f")) %>%
+  filter(!(`High School` %in% c("Central Cass","Barnesville","Horace"))) %>%
+  mutate(`High School` = fct_drop(`High School`)) %>%
+  select(`Sold Date`, `List Price`, `Sold Price`, City, `State/Province`, `Postal Code`,
+         `Geo Lat`, `Geo Lon`, `Total SqFt.`, `Year Built`, `Book Section`, Style, `Total Bedrooms`,
+         contains("Bath"), `Garage Type`,`Gen Tax`, `Flood Plain`, `Master Bedroom Main Flr`, Lake,
+         `Laundry Location`, contains("Area"),contains("SqFt"),`High School`,`Days on Market`) %>%
+  select(-contains("Per/SqFt"))
+
+set.seed(42) # This is for reproducibility, so that everyone gets the same answers.
+test_index <- createDataPartition(FM_housing$`Sold Price`, p = 0.20, list = FALSE)
+test_set <- FM_housing[test_index,]
+train_set <- FM_housing[-test_index,]
+
+FM_housing
+```
+```{r}
+reg = lm(`Sold Price` ~ `Year Built` + `Days on Market` + `Total Bedrooms` + `Total Bathrooms` + `Above Grade Finished Area` + `Below Grade Finished Area`, data = FM_housing)
+summary(reg)
+
+```
+
+# Problem 1
+
+Run `regsubsets` and use Total SqFt, Year Built, Days on Market, Total Bedrooms, Total Bathrooms, Above grade Finished Area, and Below Grade Finished to find witch predictors have the biggest effect on Sold Price.
+```{r}
+regfit_full = regsubsets(`Sold Price` ~ `Year Built` + `Days on Market` + `Total Bedrooms` + `Total Bathrooms` + `Above Grade Finished Area` + `Below Grade Finished Area`, data = FM_housing, nvmax = 19)
+reg_summary = summary(regfit_full)
+reg_summary 
+
+```
+From the asterisk results, it seems that Above Grade F.A, Below Grade F.A, and Year Built have the most influence on Sold Price, in that order of greatest to least.
+# Problem 2
+
+a) Use glmnet() to fit the Ridge Regression model to the Fargo Housing data set. Use the same predictors from question #1.
+
+```{r}
+#define response variable
+y <- FM_housing$`Sold Price`
+
+#define matrix of predictor variables
+x <- data.matrix(FM_housing[, c('Total SqFt.', 'Year Built', 'Days on Market', 'Total Bedrooms', 'Total Bathrooms', 'Above Grade Finished Area', 'Below Grade Finished Area')])
+
+#fit ridge regression model
+model <- glmnet(x, y, alpha = 0)
+
+#view summary of model
+summary(model)
+
+
+```
+
+
+b) Next use k-fold cross-validation to find the optimal lambda value. Then produce a plot of test MSE by Lambda values
+
+
+```{r}
+set.seed(100)
+#perform k-fold cross-validation to find optimal lambda value
+cv_model <- cv.glmnet(x, y, alpha = 0)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+
+#produce plot of test MSE by lambda value
+plot(cv_model) 
+
+
+
+```
+The optimal value is 9303.3
+
+C) Repeat the steps from part B but instead have alpha=1 to perform lasso regression.
+
+```{r}
+#perform k-fold cross-validation to find optimal lambda value
+set.seed(100)
+cv_model <- cv.glmnet(x, y, alpha = 1)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+
+#produce plot of test MSE by lambda value
+plot(cv_model) 
+
+
+
+```
+Lambda here is only 809 
+
+
+D) Look at the coefficients of the model you used for part C. Which variables are set to zero?
+
+```{r}
+#find coefficients of best model
+coef(cv_model)
+
+
+```
+Days on Market and Total Bedrooms are set to zero. This must be because they do not contribute meaningfully to the model. It is strange that Total Bedrooms coefficient is so high though.

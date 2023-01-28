@@ -1,0 +1,143 @@
+---
+title: "Homework14_Peters_Jake"
+author: "Jake Peters"
+date: "4/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggfortify) # for plotting PCA
+library(factoextra) # for plotting PCA
+library(pls) # for PCR
+library(arules) # for association rules
+library(arulesViz) # for plotting association rules
+library(datasets)
+library(dslabs)
+library(mlbench)
+```
+
+
+
+# Homework
+
+## PCA Homework
+
+You will use a doctored version of the NCAA basketball data set for these PCA problems.
+```{r}
+set.seed(42)
+ncaa_data <- read_csv("https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/ncaa_data_2001_2021.csv")
+# difference of seed.1 and seed.2, eliminating separate seed.1 and seed.2 variables
+ncaa_data <- cbind(ncaa_data[,1:23] - ncaa_data[,24:46],ncaa_data[,47:48])
+ncaa_data <- ncaa_data %>% dplyr::select(-winner,-games.1)
+
+ncaa_data <- ncaa_data %>% na.omit()
+ncaa_data <- ncaa_data %>% slice_sample(n = 200)
+# randomly split data in r
+sample_size = floor(0.8*nrow(ncaa_data))
+picked = sample(seq_len(nrow(ncaa_data)),size = sample_size)
+train = ncaa_data[picked,]
+test = ncaa_data[-picked,]
+y_test = ncaa_data[-picked, 23]
+```
+
+1. Create a ncaa_pca object using function pcrcomp to do PCA on the ncaa_data (centering and scaling the data as well). Summarize the ncaa_pca object. What cumulative proportion of variance do the first 10 principle components make up?
+
+```{r}
+ncaa_pca <- prcomp(ncaa_data, center = TRUE,scale. = TRUE)
+
+summary(ncaa_pca)
+```
+
+
+2. Make a basic plot using an autoplot from the ggfortify package. What arrows seem to be most aligned with the first principle component?
+
+```{r}
+autoplot(ncaa_pca,loadings = TRUE, loadings.label = TRUE, loadings.label.size  = 5)
+
+```
+
+3. Make a scree plot of the components.
+
+```{r}
+#calculate total variance explained by each principal component
+var_explained <- ncaa_pca$sdev^2 / sum(ncaa_pca$sdev^2)
+
+#create scree plot
+qplot(c(1:length(var_explained)), var_explained) + 
+  geom_line() + 
+  xlab("Principal Component (Dimension)") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") +
+  ylim(0, 1)
+```
+
+4. Use the pls package (function pcr) to perform linear regression on the ncaa dataset (predicting point_diff). Then, make a lm linear model with every variable in the data set (also predicting point_diff). Generate mean squared error values for a linear model (with every variable) and a pcr model with 6 components (hint: predict(pcr_model, test,ncomp = 6). Which model has less mean squared error on the test set?
+
+```{r}
+# make a LR model with all the variables
+lr_model <- lm(data = train, point_diff ~ .)
+summary(lr_model)
+lr_pred <- predict(lr_model, test)
+pcr_model <- pcr(point_diff ~ ., data = train, scale = TRUE, validation = "CV")
+pcr_pred <- predict(pcr_model, test, ncomp = 6)
+
+mean((lr_pred - y_test)^2)
+mean((pcr_pred - y_test)^2)
+```
+
+## Association Rules Homework
+
+ Use the Titanic dataset for the homework exercises. 
+ DOWNLOAD titanic.raw.rdata HERE --> https://drive.google.com/file/d/1znuZeEo_Mda57TexUqI6BB-w69OTMLQJ/view  
+```{r}
+df <- titanic.raw
+```
+
+1) Convert the Titanic dataset to a transaction format in order to perform apriori function and make an item frequency plot.
+
+```{r}
+df <- transactions(df)
+itemFrequencyPlot(df,topN = 20)
+
+```
+
+
+2) Use apriori to create rules using a support of 0.001 and confidence of 0.8.
+
+```{r}
+rules<-apriori(data=df, parameter=list(supp=0.001,conf = 0.08), 
+ control = list(verbose=F))
+ rules<-sort(rules, decreasing=TRUE,by="confidence")
+ inspect(rules[1:5])
+```
+
+3) Sort the rules according to lift and make a graph like we did in class.
+
+```{r}
+inspect(sort(rules, by = 'lift')[1:10])
+plot(rules, method = "graph", 
+     measure = "confidence", shading = "lift")
+```
+
+4) Use apriori to create rules and list them according to first class (Class=1st) on the left side.
+
+```{r}
+rules<-apriori(data=df, parameter=list(supp=0.001,conf = 0.08), 
+ appearance = list(default="rhs",lhs="Class=1st"),
+ control = list(verbose=F))
+ rules<-sort(rules, decreasing=TRUE,by="confidence")
+ inspect(rules[1:5])
+```
+
+5) Use apriori to create rules and list them according to third class (Class=3rd) on the left hand side. What differences do you see and what does that tell you?
+
+```{r}
+rules<-apriori(data=df, parameter=list(supp=0.001,conf = 0.08), 
+ appearance = list(default="rhs",lhs="Class=3rd"),
+ control = list(verbose=F))
+ rules<-sort(rules, decreasing=TRUE,by="confidence")
+ inspect(rules[1:5])
+```
+We see that there are more supports for 3rd class being adults. That tells us that there are more kids that were 1st class, so more rich kids. Also, more 1st class people died than 3rd class people, which maybe told us that many people died overall.

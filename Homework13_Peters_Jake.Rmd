@@ -1,0 +1,416 @@
+---
+title: "Homework13_Peters_Jake"
+author: "Jake Peters"
+date: "4/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(neuralnet)
+library(MASS)
+library(caret)
+library(pROC)
+library(ROCR)
+library(dslabs)
+library(factoextra) #Allows easy graphing of clusters.
+library(cluster) #Used for hierarchical clustering
+library(ISLR2)
+library(gtools)
+library(ggpubr)
+library(lubridate)
+library(scales)
+library(tidytext)
+library(textdata)
+library(broom)
+library(gutenbergr)
+
+```
+
+
+# Gutenberg Homework
+
+
+## Exercises
+
+
+Project Gutenberg is a digital archive of public domain books. The R package __gutenbergr__ facilitates the importation of these texts into R.
+
+You can see the books that are available like this:
+
+```{r, eval=FALSE}
+gutenberg_metadata
+```
+
+### Problem 1
+Use `str_detect` to find the ID of the novel "Pride and Prejudice". 
+
+```{r}
+hello <- str_detect(gutenberg_metadata$title, "Pride and Prejudice$")
+hello <- which(hello, arr.ind = TRUE)
+hello
+filter(gutenberg_metadata[hello[1:length(hello)],])
+
+```
+
+### Problem 2
+We notice that there are several versions. The `gutenberg_works()` function filters this table to remove replicates and include only English language works. Read the help file and use this function to find the ID for _Pride and Prejudice_.
+
+```{r}
+gutenberg_works(title == "Pride and Prejudice", languages = "en", distinct = TRUE)
+
+```
+
+### Problem 3
+Use the `gutenberg_download` function to download the text for Pride and Prejudice. Save it to an object called `book`. Use the `head` function to look at the first few rows.
+
+```{r}
+book <- gutenberg_download(gutenberg_id = 1342)
+head(book)
+```
+
+### Problem 4
+Use the `unnest_tokens` function from the __tidytext__ package to create a tidy table with all the words in the text. Save the table in an object called `words`
+
+```{r}
+booktib <- tibble(book)
+words <- booktib %>% unnest_tokens(word, text)
+
+```
+
+### Problem 5
+We will later make a plot of sentiment versus location in the book. For this, it will be useful to add a column with the word number to the table. 
+
+```{r}
+words <- words %>% mutate(word_count = row(words))
+```
+
+### Problem 6
+Remove the stop words and numbers from the `words` object.  
+```{r}
+words <- words %>% filter(!word %in% stop_words$word)
+words <- words %>% filter(!word %in% c(1:42671))
+
+
+```
+
+### Problem 7
+Now use the `AFINN` lexicon to assign a sentiment value to each word.
+```{r}
+afinn <- get_sentiments("afinn")
+
+sentiment_counts <- words %>%
+  left_join(afinn, by = "word") %>% filter(value != "NA")
+ # %>%
+  # pivot_wider(values_from = n) %>%
+  # mutate(sentiment = replace_na(sentiment, replace = "none"))
+```
+
+### Problem 8
+Make a plot of sentiment score versus location in the book and add a smoother (`geom_smooth`).
+```{r}
+ggplot(sentiment_counts) + geom_point(mapping = aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value)) + geom_smooth(aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value))
+
+
+```
+
+### Problem 9
+Assume there are 300 words per page. Convert the locations to pages and then compute the average sentiment in each page. Plot that average score by page. Add a smoother that appears to go through data.
+
+```{r}
+sentiment_counts <- sentiment_counts %>% mutate(page = floor(word_count/300))
+
+res <- sentiment_counts %>%
+        group_by(page) %>%
+        summarise(Mean = mean(value))
+ggplot(res) + geom_point(aes(x = res$page[,1], y = Mean)) + geom_smooth(aes(x = res$page[,1], y =res$Mean))
+
+```
+
+### Problem 10
+
+Chose another classic piece of literature from the gutenberg database (preferably one that you have read/studied). Repeat the above analysis. Does the sentiment graph match with what you know of the plot of the piece of literature?
+
+```{r}
+df <- gutenberg_works(title == "The Picture of Dorian Gray", languages = "en", distinct = TRUE)
+book <- gutenberg_download(gutenberg_id = df[,1])
+booktib <- tibble(book)
+words <- booktib %>% unnest_tokens(word, text)
+words <- words %>% mutate(word_count = row(words))
+words <- words %>% filter(!word %in% stop_words$word)
+words <- words %>% filter(!word %in% c(1:42671))
+afinn <- get_sentiments("afinn")
+
+sentiment_counts <- words %>%
+  left_join(afinn, by = "word") %>% filter(value != "NA")
+
+ggplot(sentiment_counts) + geom_point(mapping = aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value)) + geom_smooth(aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value))
+
+sentiment_counts <- sentiment_counts %>% mutate(page = floor(word_count/300))
+
+res <- sentiment_counts %>%
+        group_by(page) %>%
+        summarise(Mean = mean(value))
+ggplot(res) + geom_point(aes(x = res$page[,1], y = Mean)) + geom_smooth(aes(x = res$page[,1], y =res$Mean))
+
+
+
+
+
+```
+In The Picture of Dorian Gray, the novel starts out kind of passive, with the main character mainly being an observer at first. Then, he figures out a magical pictureframe that shows him pictures of different aspects of his character. He eventually starts using it for evil, being debauched and amoral, eventually killing a man. This shows up in the plot, which shows the book becoming darker over time. It matches up with what I know from the actual story.
+
+Below is a loop I wrote that takes the first 1000 books and spits out their sentiment value differences from their beginning and end. Later on, I filtered this loop and filtered for the highest and lowest values to get the biggest differences.
+```{r}
+
+# results <- 0
+# id <- 0
+# for(i in 1:1000) {
+# book <- gutenberg_download(gutenberg_id = i)
+# booktib <- tibble(book)
+# words <- booktib %>% unnest_tokens(word, text)
+# words <- words %>% mutate(word_count = row(words))
+# words <- words %>% filter(!word %in% stop_words$word)
+# words <- words %>% filter(!word %in% c(1:42671))
+# afinn <- get_sentiments("afinn") %>%
+#   select(word, value)
+# 
+# sentiment_counts <- words %>%
+#   left_join(afinn, by = "word") %>% filter(value != "NA")
+# 
+# # ggplot(sentiment_counts) + geom_point(mapping = aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value)) + geom_smooth(aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value))
+# 
+# sentiment_counts <- sentiment_counts %>% mutate(page = floor(word_count/300))
+# 
+# res <- sentiment_counts %>%
+#         group_by(page) %>%
+#         summarise(Mean = mean(value))
+# 
+# if(nrow(res) > 50) {
+#   y <- c(mean(as.numeric((unlist(res[1:20,2])))) - mean(as.numeric((unlist(res[(nrow(res) - 20):(nrow(res)),2]))))) 
+#   
+# results <- rbind(results, y)
+# id <- rbind(id, i)
+# }
+# }
+# results <- cbind(results, id)
+```
+I saved the file to a csv (the loop took 20 min to run).
+```{r}
+# results_sorted <- as.data.frame(results)
+# results_sorted <- results_sorted %>% arrange(results_sorted$V1)
+# 
+# neg <- head(results_sorted, 20)
+# 
+# pos <- tail(results_sorted, 20)
+# 
+# drastic <- rbind(neg, pos)
+# gutenberg_metadata <- gutenberg_metadata[-1,]
+# this <- filter(gutenberg_metadata[as.numeric(drastic$V2),])
+# complete <- cbind(drastic, this$title)
+# completed_actually <- cbind(drastic, this$title, this$gutenberg_id)
+
+
+```
+
+
+```{r}
+# completed_actually <- read_csv("completed_actually") %>% as.data.frame()
+# book <- gutenberg_download(gutenberg_id = completed_actually[4,4])
+# booktib <- tibble(book)
+# words <- booktib %>% unnest_tokens(word, text)
+# words <- words %>% mutate(word_count = row(words))
+# words <- words %>% filter(!word %in% stop_words$word)
+# words <- words %>% filter(!word %in% c(1:42671))
+# afinn <- get_sentiments("afinn") %>%
+#   select(word, value)
+# 
+# sentiment_counts <- words %>%
+#   left_join(afinn, by = "word") %>% filter(value != "NA")
+# 
+# ggplot(sentiment_counts) + geom_point(mapping = aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value)) + geom_smooth(aes(x = sentiment_counts$word_count[,1], y = sentiment_counts$value))
+# 
+# sentiment_counts <- sentiment_counts %>% mutate(page = floor(word_count/300))
+# 
+# res <- sentiment_counts %>%
+#         group_by(page) %>%
+#         summarise(Mean = mean(value))
+# ggplot(res) + geom_point(aes(x = res$page[,1], y = Mean)) + geom_smooth(aes(x = res$page[,1], y =res$Mean))
+
+```
+save results to an excel file
+```{r}
+#write_csv(completed_actually, file = "completed_actually")
+```
+
+
+## Neural Network Homework
+
+Use the dataset "dividend" for your homework exercises. The data has been normalized and test and train sets have been created for you. 
+
+```{r}
+set.seed(77)
+dividend <- read.csv("https://raw.githubusercontent.com/MGCodesandStats/datasets/master/dividendinfo.csv")
+normalize <- function(x){
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+dividend <- as.data.frame(lapply(dividend, normalize))
+dividend
+
+#Training and Test
+train_set <- dividend[1:160, ]
+test_set <- dividend[161:200, ]
+```
+
+### Question 1
+
+Create a Single layer neural network model for the `dividend` variable using every other variable in the dividend dataset. Start out using 3 for your hidden layers and adjust based off your error. Since this is a classification task, make sure linear.output is set to FALSE and err.fct is set to "ce" (cross-entropy for evaluating classification). Use `set.seed(77)` to ensure everyone gets the same results.
+
+```{r}
+set.seed(77)
+nn.single = neuralnet(dividend ~ ., hidden = 3 , linear.output = FALSE, err.fct = "ce", data = train_set)
+
+# plot neural network
+plot(nn.single)
+
+
+
+
+
+```
+3 layers: E = .02482
+4 layers: .0268
+2 layers: 7.178
+5 layers: .0801
+It seems like 3 layers are the best with the smallest error of .02482
+### Question 2
+
+Predict whether there will be a dividend using the `predict` function that was used in the examples. Then print the results to compare the predicted data with the actual data.
+
+```{r}
+
+predictions <- predict(nn.single, test_set)
+
+ggplot(test_set) +
+  geom_jitter(aes(x = predictions, y = dividend)) +
+  geom_abline(slope = 1, color = "red") +
+  labs(x = "Predicted", y = "Actual")
+
+ggplot(test_set) +
+  geom_count(aes(x = predictions, y = dividend)) +
+  geom_abline(slope = 1, color = "red") +
+  labs(x = "Predicted", y = "Actual")
+
+```
+
+### Question 3
+
+Using the results from Question 2, create a confusion matrix (will need to convert both your predictions and the `dividend` variable to factors). What is the accuracy of your model? 
+
+```{r}
+
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, x <0.4,0)}))
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, ( x >0.4),1)}))
+predictions <- as.factor(predictions)
+test_set <- test_set %>% mutate(dividend =as.factor(dividend))
+confusionMatrix(predictions, test_set$dividend)
+
+```
+The accuracy is 97.5%, which is very good!
+
+### Question 4
+
+Finally, try creating a multi-layered model using the same data, but use THREE hidden layers: one with 4 nodes, one with 3, and one with 2 (hint: `hidden = c(4,3,2)` in the `neuralnet` function). Use `predict` to predict values on the test set, and then find the accuracy on the test set.
+
+```{r}
+
+nn.multi = neuralnet(dividend ~ ., hidden = c(4,3,2) , linear.output = FALSE, err.fct = "ce", data = train_set)
+
+# plot neural network
+plot(nn.multi)
+predictions <- predict(nn.multi, test_set)
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, x <0.4,0)}))
+predictions <- as.data.frame(lapply(predictions, function(x){replace(x, ( x >0.4),1)}))
+predictions <- as.factor(predictions)
+test_set <- test_set %>% mutate(dividend =as.factor(dividend))
+confusionMatrix(predictions, test_set$dividend)
+```
+
+The accuracy is 95%. 
+
+
+
+## Clustering Homework
+
+```{r}
+FM_housing = read_csv(file = "https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/FM_housing.csv",
+                      col_types = cols(City = "f",
+                                       `Book Section` = "f",
+                                       `State/Province` = "f",
+                                       `Postal Code` = "f",
+                                       `Style` = "f",
+                                       `Garage Type` = "f",
+                                       `Flood Plain` = "f",
+                                       `Master Bedroom Main Flr` ="f",
+                                       `Laundry Location` = "f",
+                                       `High School` = "f")) %>%
+  filter(!(`High School` %in% c("Central Cass","Barnesville"))) %>%
+  mutate(`High School` = fct_drop(`High School`)) %>%
+  dplyr::select(`List Price`, `Sold Price`, 
+         `Geo Lat`, `Geo Lon`, `Total SqFt.`, `Total Bedrooms`,
+         contains("Bath"), `Garage Type`,`Gen Tax`, `Flood Plain`, `Master Bedroom Main Flr`, 
+         `Laundry Location`, contains("Area"),contains("SqFt"),`High School`,`Days on Market`)
+
+set.seed(42) # This is for reproducibility, so that everyone gets the same answers.
+test_index <- createDataPartition(FM_housing$`Sold Price`, p = 0.20, list = FALSE)
+test_set <- FM_housing[test_index,]
+train_set <- FM_housing[-test_index,]
+```
+
+
+1. Create a K-Means Cluster model using the FM_housing data set using Sold Price and List Price. Start by using 5 clusters. Use set.seed(42) so we all get the same result. Which cluster has the highest sold price? What is that price?
+```{r}
+set.seed(42)
+km <- kmeans(FM_housing[,1:2], center = 5, nstart = 20)
+aggregate(FM_housing, by=list(cluster=km$cluster), mean)
+
+
+```
+cluster 5 has the highest Sold Price at 687,006.6 dollars.
+
+2.  Determine the optimal number of clusters (best to use the elbow method) and rerun your model with that number.
+
+```{r}
+sapply(FM_housing, function(x) sum(is.na(x)))
+FM_housing <- FM_housing[-c(8,9, 10,12,14)]
+FM_housing <- na.omit(FM_housing)
+FM_housing <- FM_housing %>% as.data.frame() 
+FM_housing[] <- lapply(FM_housing, function(x) as.numeric(as.character(x)))
+FM_housing <- FM_housing[-c(8,9, 10,18)]
+fviz_nbclust(FM_housing, kmeans, method = "wss")
+km <- kmeans(FM_housing[,1:2], center = 6, nstart = 20)
+aggregate(FM_housing, by=list(cluster=km$cluster), mean)
+```
+
+3. Create a hierarchical clustering model for the mtcars data. Use "average" for the method. Plot the dendrogram as well. 
+
+```{r}
+agnes_cl <- agnes(scale(mtcars), method = 'average')
+pltree(agnes_cl, cex = 0.6, hang = -1, main = "Dendrogram")
+
+```
+
+4. Find the optimal number of clusters (use the elbow method) for the previous problem and cut the tree into those clusters. Which cluster has the highest mpg and what is it?
+```{r}
+fviz_nbclust(scale(mtcars), hcut, method = "wss",kmax = 50, print.summary = TRUE)
+gap_stat <- clusGap(scale(mtcars),
+                    FUN = hcut,
+                    nstart = 25,
+                    K.max = 30,
+                    B = 50)
+fviz_gap_stat(gap_stat)
+groups <- cutree(agnes_cl, k = 5)
+table(groups)
+```
+Cluster 4 has the highest mpg at 12 mpg.

@@ -1,0 +1,239 @@
+---
+title: "Homework8_Peters_Jake"
+author: "Jake Peters"
+date: "3/7/2022"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('tidyverse')
+library('caret')
+library('skimr')
+library('naniar')
+library('visdat')
+library('stringr')
+library('RANN')
+library('car')
+library('e1071')
+library('ROCR')
+library('pROC')
+```
+
+Preprocessing problems
+## Homework Preprocessing
+
+```{r}
+SBA_clean <- read_csv("https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/SBA_clean.csv",
+                      col_types = cols(State = col_factor(),
+            NAICS_2d = col_factor(),
+            ApprovalDate = col_date(),
+            Term = col_double(),
+            RealBacked = col_factor(),
+            NoEmp = col_double(),
+            NewExist = col_factor(),
+            UrbanRural = col_factor(),
+            RevLineCr = col_factor(),
+            LowDoc = col_factor(),
+            DisbursementGross = col_double(),
+            Loan_Status = col_factor(),
+            Portion_Backed = col_double()
+          )) %>%
+  select(-Portion_Backed) %>%
+  data.frame()
+set.seed(42)
+test_index <- createDataPartition(SBA_clean$Loan_Status, p = 0.20, list = FALSE)
+test_SBA <- SBA_clean[test_index,]
+train_SBA <- SBA_clean[-test_index,]
+```
+
+Let's try applying what we learned about near-zero variance predictors and transforming variables to the logistic regression and the SBA loan data set.
+
+Here is our baseline from last week:
+
+```{r}
+model5 <- glm(Loan_Status ~ ., data = train_SBA, family = binomial)
+phat5 <- predict(model5, newdata = test_SBA, type = "response")
+roc(response = test_SBA$Loan_Status, predictor = phat5, plot = TRUE)
+summary(model5)
+```
+
+Our baseline model has an ROC area under the curve of 0.7975. We will see if we can improve on that. Answer the following questions using the test set.
+
+### Problem 1 - Near-Zero Variance Predictors
+
+Check for near-zero variance predictors. Are there any?
+
+```{r}
+NZV2 <- nearZeroVar(train_SBA, saveMetrics = T)
+NZV2
+
+```
+There are not any zero or near-zero variance predictors based on the caret package results.
+### Problem 2
+
+Visualize the distributions of the quantitative predictors (Term, NoEmp, DisbursementGross, Portion_Backed) with histograms (feel free to create a separate histogram for each variable). Which variable(s) appear to be skewed?
+
+```{r}
+attach(train_SBA)
+ggplot() + geom_histogram(aes(x= Term))
+ggplot() + geom_histogram(aes(x= NoEmp))
+ggplot() + geom_histogram(aes(x= DisbursementGross))
+
+
+```
+Term appears to be slightly right-skewed.
+NoEmp is very right skewed.
+DisbursementGross is also very right-skewed.
+PortionBacked was removed from the original dataset for some reason so I cannot use that variable.
+
+### Problem 3 
+
+Compute the $\lambda$ values for all of the quantitative variables from problem 2 using the preProcess command. You might have to use the "add one" trick for a few of the variables. What values of $\lambda$ did you get?
+
+```{r}
+
+train_SBA <- train_SBA %>%
+  mutate(`Term` = `Term` + 1, `NoEmp` = `NoEmp` + 1)
+
+preProcValues <- train_SBA %>% as.data.frame() %>% select(Term, NoEmp, DisbursementGross) %>% 
+  preProcess(method = "BoxCox", verbose = T)
+
+preProcValues$bc
+```
+For lambda values, I got 0.4 for Term, -0.5 for noEmp, and 0 for disbursementGross. 
+
+### Problem 4
+
+Use predict to execute the transformations. Visualize the quantitative variable after transformation.
+
+```{r}
+train_trans <- predict(preProcValues, as.data.frame(train_SBA))
+
+
+
+train_trans %>% select(`Term`, `NoEmp`,`DisbursementGross`) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram() + 
+  facet_wrap(Variable ~ ., scales = "free_x")
+
+train_SBA %>% select(`Term`, `NoEmp`,`DisbursementGross`) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram() + 
+  facet_wrap(Variable ~ ., scales = "free_x")
+```
+The transformation function actually worked on the variables, as we can see in the plots!
+## Problem 5
+
+Use the transformed training data as input to a logistic model. 
+
+Transform the test data. Don't forget to transform the test data in the same way that you transformed the training data (using the preprocessing values from the training set).
+
+Compare the performance (ROC area under the curve) on the transformed test set to our baseline (model5). 
+
+```{r}
+
+test_SBA <- test_SBA %>%
+  mutate(`Term` = `Term` + 1, `NoEmp` = `NoEmp` + 1)
+test_trans <- predict(preProcValues, as.data.frame(test_SBA))
+
+model6 <- glm(Loan_Status ~ ., data = train_trans, family = binomial)
+phat6 <- predict(model6, newdata = test_trans, type = "response")
+roc(response = test_trans$Loan_Status, predictor = phat6, plot = TRUE)
+summary(model6)
+
+```
+The AIC for the transformed model was slightly better than the AIC for the original model! (33626 < 34255)
+This is a good indication that our transformed model performs better than the original model.
+
+
+Missing Data problems
+
+### Problem 1
+
+Create a visualization of the missingness in airquality. Which columns contain missing values? how much missingness is there?
+
+```{r}
+airquality
+vis_miss(airquality)
+
+
+```
+ozone and solar contain missing values. There are 24% of ozone values missing and 4.58% of solar.R values missing.
+### Problem 2
+
+Take two of the variables with missingness and plot them against each other with `geom_miss_point`.
+
+```{r}
+ggplot(airquality) +geom_miss_point(aes(x= Ozone, y= Solar.R))
+
+
+```
+
+### Problem 3
+
+Create a shadow of the data with `as_shadow`. We will use this later to visualize the imputed values.
+
+```{r}
+
+shadow_airquality <- as_shadow(airquality)
+shadow_airquality
+
+```
+
+
+### Problem 4
+
+Before we use knn for imputation, is there any steps that we might want to take with our predictors? Looking at the predictors, are distances between predictors equivalent? 
+
+Note the `preProcess` automatically centers and scales the data if you ask for `knnImpute`. But even with centering and scaling, would there be a problem? What step could we take before `preProcess`? Go ahead and do that.
+
+Hint: Compare the "distance" between February 22 and March 22 vs February 22 and February 23. How can we combine Month and Day into a single variable?
+
+```{r}
+
+airquality
+
+airquality$day <- seq.Date(as.Date("1973-05-01"), length.out = 153, by = "day")
+
+airquality$dayInt <- difftime((airquality$day+1), head(airquality$day,1), units = "day") %>% extract_numeric()
+airquality
+airquality <- airquality %>% select(-c(Month, Day))
+airquality
+```
+
+### Problem 5
+
+Use `preProcess` with `method = "knnImpute"` to impute the missing values.
+
+```{r}
+set.seed(42) # This is for reproducibility, so that everyone gets the same answers.
+test_index <- createDataPartition(airquality$`dayInt`, p = 0.275, list = FALSE)
+test_air <- airquality[test_index,]
+train_air <- airquality[-test_index,]
+train_air
+test_air
+preProc <- train_air %>%
+  preProcess(method = "knnImpute")
+
+train_air_imp <- predict(preProc, train_air)
+skim(train_air_imp)
+
+train_air_imp
+```
+
+### Problem 6 
+
+Use `geom_density` to visualize the distribution of the original and imputed values for each variable that had missingness.
+
+```{r}
+
+
+ggplot(train_air_imp) + 
+  geom_density(aes(x = `Ozone`, fill = is.na(train_air$`Ozone`)), alpha = 0.3)
+
+ggplot(train_air_imp) + 
+  geom_density(aes(x = `Solar.R`, fill = is.na(train_air$`Solar.R`)), alpha = 0.3)
+
+```

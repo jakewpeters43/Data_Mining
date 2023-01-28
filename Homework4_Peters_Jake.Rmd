@@ -1,0 +1,220 @@
+---
+title: "Homework4_Peters_Jake"
+output: html_notebook
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('tidyverse')
+library('dslabs')
+if (!require('caret')) install.packages('caret')
+library('caret')
+```
+
+## Homework
+
+Let's return to the brca dataset. Now, we will use the predictors: mean radius and mean texture.
+
+```{r}
+data(brca)
+brca_data <- data.frame(brca$x) %>% 
+  select(radius_mean, texture_mean) %>% 
+  data.frame(y = brca$y)
+
+set.seed(42)
+test_index <- createDataPartition(brca_data$y, p = 0.25, list = FALSE)
+test_brca <- brca_data[test_index,]
+train_brca <- brca_data[-test_index,]
+
+ggplot(train_brca)+
+  geom_density(mapping = aes(x =  radius_mean, fill = y), alpha = 0.5)
+
+ggplot(train_brca)+
+  geom_density(mapping = aes(x =  texture_mean, fill = y), alpha = 0.5)
+
+ggplot(train_brca)+
+  geom_density2d(mapping = aes(x = radius_mean, y = texture_mean, color = y))+
+  geom_point(mapping = aes(x = radius_mean, y = texture_mean, color = y))
+train_brca
+```
+
+### Problem 1
+
+Create a kNN model using k = 1 neighbor to predict whether the mass is malignant or benign. Visualize the model results on the test set using color for the actual class and shape for whether the point is correctly. Also, compute the confusion matrix (treating malignant as the positive class).
+
+```{r}
+## Your code goes here.
+model_knn <- train(y ~ ., 
+                   data = train_brca, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=1))
+y_hat_knn <- predict(model_knn, newdata = test_brca[,1:2])
+
+
+ggplot(test_brca)+
+  geom_density2d(mapping = aes(x = radius_mean, y = texture_mean, color = y_hat_knn))+
+  geom_point(mapping = aes(x = radius_mean, y = texture_mean, color = y))
+
+confusionMatrix(data = y_hat_knn, reference = factor(test_brca$y), positive = "M")
+
+```
+
+### Problem 2
+
+For the k=1 model, create a probability map for the probability that the mass is malignant. The command `brca_grid <- expand.grid(radius_mean = seq(7,30,0.1), texture_mean = seq(10,35,0.1))` will create a grid of radius and texture values that you can use as new data to predict probabilities. Since k=1, what values can the predicted probability take?
+
+```{r}
+## Your code goes here.
+brca_grid <- expand.grid(radius_mean = seq(7,30,0.1), texture_mean = seq(10,35,0.1))
+y_hat_knn_prob <- predict(model_knn, newdata = brca_grid[,1:2],type = "prob")
+y_hat_knn_prob
+
+ggplot(y_hat_knn_prob, mapping = aes(x = brca_grid$radius_mean, y = brca_grid$texture_mean, z = M, fill = M)) +
+  geom_raster()+
+  scale_fill_gradientn(colors=c("red","blue","blue"), name = "Pr(Malignant)") +
+  stat_contour(breaks=c(0.5),color="black")
+```
+The values are either 1 or 0 because the nearest neighbor is all-or-nothing, 100% malignant or 100% benign.
+
+### Problem 3
+
+Create a kNN model using k = 11 neighbors to predict whether the mass is malignant or benign. Visualize the model results on the test set using color for the actual class and shape for whether the point is correctly. Also, compute the confusion matrix (treating malignant as the positive class).
+
+```{r}
+## Your code goes here.
+model_knn_eleven <- train(y ~ ., 
+                   data = train_brca, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=11))
+y_hat_knn_eleven <- predict(model_knn_eleven, newdata = test_brca[,1:2])
+
+
+ggplot(test_brca)+
+  geom_density2d(mapping = aes(x = radius_mean, y = texture_mean, color = y_hat_knn_eleven))+
+  geom_point(mapping = aes(x = radius_mean, y = texture_mean, color = y))
+
+confusionMatrix(data = y_hat_knn_eleven, reference = factor(test_brca$y), positive = "M")
+```
+
+### Problem 4
+
+For the k=11 model, create a probability map for the probability that the mass is malignant. You can reuse the `brca_grid` from problem 2. Since k=11, what values can the predicted probability take?
+
+```{r}
+## Your code goes here.
+brca_grid <- expand.grid(radius_mean = seq(7,30,0.1), texture_mean = seq(10,35,0.1))
+y_hat_knn_eleven_prob <- predict(model_knn_eleven, newdata = brca_grid[,1:2],type = "prob")
+y_hat_knn_eleven_prob
+
+ggplot(y_hat_knn_eleven_prob, mapping = aes(x = brca_grid$radius_mean, y = brca_grid$texture_mean, z = M, fill = M)) +
+  geom_raster()+
+  scale_fill_gradientn(colors=c("red","blue","blue"), name = "Pr(Malignant)") +
+  stat_contour(breaks=c(0.5),color="black")
+```
+The values can be anywhere from 0/11, 1/11, 2/11, ... , 10/11, 11/11. for B and then 1 - prob(B) for M.
+
+### Problem 5
+
+Use 10-fold cross-validation (with Kappa as the metric) to select the best value for the number of neighbors (use k = seq(1,41,2)). What value of k gives the best Kappa?
+
+```{r}
+## Your code goes here.
+control = trainControl(method = "cv", number = 10)
+model_knn_cv <- train(y ~ ., 
+                   data = train_brca, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=seq(1,41,2)),
+                   trControl = control,
+                   metric = "Kappa")
+model_knn_cv
+ggplot(model_knn_cv, highlight = TRUE)
+```
+A k of 37 gives the best value of Kappa at .799.
+
+### Problem 6
+
+Visualize the model results (using the best k) on the test set using color for the actual class and shape for whether the point is correctly. Also, compute the confusion matrix (treating malignant as the positive class).
+
+```{r}
+## Your code goes here.
+model_knn_35 <- train(y ~ ., 
+                   data = train_brca, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=37))
+y_hat_knn_35 <- predict(model_knn_35, newdata = test_brca[,1:2])
+
+
+ggplot(test_brca)+
+  geom_density2d(mapping = aes(x = radius_mean, y = texture_mean, color = y_hat_knn_35))+
+  geom_point(mapping = aes(x = radius_mean, y = texture_mean, color = y))
+
+confusionMatrix(data = y_hat_knn_35, reference = factor(test_brca$y), positive = "M")
+```
+
+### Problem 7
+
+For the best k model, create a probability map for the probability that the mass is malignant.
+
+```{r}
+## Your code goes here.
+brca_grid <- expand.grid(radius_mean = seq(7,30,0.1), texture_mean = seq(10,35,0.1))
+y_hat_knn_35_prob <- predict(model_knn_35, newdata = brca_grid[,1:2],type = "prob")
+y_hat_knn_35_prob
+
+ggplot(y_hat_knn_35_prob, mapping = aes(x = brca_grid$radius_mean, y = brca_grid$texture_mean, z = M, fill = M)) +
+  geom_raster()+
+  scale_fill_gradientn(colors=c("red","blue","blue"), name = "Pr(Malignant)") +
+  stat_contour(breaks=c(0.5),color="black")
+```
+## Homework Part 2
+
+Create a kNN model for sale price using latitude, longitude, total square footage, and style. Center and scale latitude, longitude, and total square footage. Create dummy variables for style. Use cross-validation to select k from 1 to 81 (by 4).
+```{r}
+FM_housing = read_csv(file = "https://raw.githubusercontent.com/gmtanner-cord/DATA318/master/Original%20Data/FM_housing.csv",
+                      col_types = cols(City = "f",
+                                       `State/Province` = "f",
+                                       `Postal Code` = "f",
+                                       `Style` = "f",
+                                       `Garage Type` = "f",
+                                       `Flood Plain` = "f",
+                                       `Master Bedroom Main Flr` ="f",
+                                       `Laundry Location` = "f",
+                                       `High School` = "f")) %>%
+  filter(!(`High School` %in% c("Central Cass","Barnesville"))) %>%
+  mutate(`High School` = fct_drop(`High School`))
+
+set.seed(42) # This is for reproducibility, so that everyone gets the same answers.
+test_index <- createDataPartition(FM_housing$`Sold Price`, p = 0.20, list = FALSE)
+test_set <- FM_housing[test_index,]
+train_set <- FM_housing[-test_index,]
+```
+
+```{r}
+## Your code here.
+dummies <- dummyVars(~ `Style`, data = train_set)
+StyleDummies_train <- predict(dummies, newdata = train_set)
+StyleDummies_test <- predict(dummies, newdata = test_set)
+head(StyleDummies_train)
+
+train_ready <- train_set %>%
+  select(`Sold Price`, `Total SqFt.`,`Geo Lat`, `Geo Lon`) %>%
+  cbind(StyleDummies_train)
+test_ready <- test_set %>%
+  select(`Sold Price`, `Total SqFt.`,`Geo Lat`, `Geo Lon`) %>%
+  cbind(StyleDummies_test)
+
+control <- trainControl(method = "cv", number = 10)
+model_knn_cv <- train(`Sold Price` ~ ., 
+                   data = train_ready, 
+                   method = "knn",
+                   tuneGrid = data.frame(k=seq(1,81,4)),
+                   trControl = control,
+                   preProcess = c("center","scale"))
+ggplot(model_knn_cv, highlight = TRUE)
+model_knn_cv
+y_hat_knn_cv <- predict(model_knn_cv, newdata = test_ready)
+postResample(y_hat_knn_cv,test_ready$`Sold Price`)
+
+
+```

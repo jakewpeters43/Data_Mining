@@ -1,0 +1,197 @@
+---
+title: "Homework5_Peters_Jake"
+author: "Jake Peters"
+date: "2/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR2)
+library(ggplot2)
+```
+Sections 3.1 3.2 3.3
+#9 (b-c)
+```{r}
+#b. 
+drop <- c("name")
+df = Auto[,!(names(Auto) %in% drop)]
+cor(df)
+
+#c. 
+mod1 <- lm(data= df, mpg ~.)
+summary(mod1)
+```
+Here is the correlation between the variables in Auto.
+
+i. Yes there is a significant relationship in some of them.
+ii. Yes, there is a negative relationship between mpg and weight. So the the more the car weighs, the less mpg. There is a positive between year and mpg, so newer cars have better mpg. Displacement and origin also have positive significant relationships with mpg.
+iii. The year variable coefficient suggests that newer cars get better mpg on average. For every .75 units up in mpg, there is a 1 unit increase in year.
+
+
+#10 (a-f)
+```{r}
+#a. 
+mod2 <- lm(data=Carseats, Sales ~ Price + Urban + US)
+summary(mod2) 
+
+
+```
+b. Price has a negative relationship, so for 
+every decrease in 1 unit of price, the sales increase .054 unit. For Urban, there is not a significant relationship, but if its Urban, the sales decrease. For USYes, if the carseat is sold in the US, the sales will increase by about 1.201 units. 
+c. sales = -0.054 * Price + -0.02 UrbanYes + 1.2 USYes + 13.04
+d. Price and USYes, based on p=value significance.
+e. 
+```{r}
+modsmaller <- lm(data=Carseats, Sales ~ Price + US)
+summary(modsmaller) 
+```
+only included price and USYes
+f. The second model has perhaps a slightly better fit, with a slightly higher adjusted R^2 (.002 higher), but that is not very different at all from the original model. They fit the data similarly.
+
+
+Sections 3.4 3.5
+
+#13 (a-f, h, i), 
+```{r}
+set.seed(1)
+#a.
+x <- rnorm(100)
+#b. 
+eps <- rnorm(100,0,sqrt(0.25))
+#c.
+Y <- -1 + .5 * x + eps
+Y
+length(Y)
+#d.
+plot(x,Y)
+#e.
+mod3 <- lm(Y~x)
+summary(mod3)
+#f.
+plot(x, Y)
+abline(mod3, lwd=3, col=2)
+abline(-1, 0.5, lwd=3, col=3)
+legend(-.9, legend = c("model fit", "pop. regression"), col=2:3, lwd=3)
+
+```
+c. length of Y is 100, value of B0 is -1 and B1 is 0.5.
+d.
+There is a linear relationship between x and Y, with a positive slope.
+e. this is a strong linear relationship between x and Y, with significance. A 1 increase in x is leading to a 0.5 unit increase in Y. This is about exactly what we expect.
+h.
+```{r}
+#h.
+set.seed(1)
+#a.
+x <- rnorm(100)
+#b. 
+eps <- rnorm(100,0,0.1)
+#c.
+Y <- -1 + .5 * x + eps
+Y
+length(Y)
+#d.
+plot(x,Y)
+#e.
+mod4 <- lm(Y~x)
+summary(mod4)
+#f.
+plot(x, Y)
+abline(mod4, lwd=3, col=2)
+abline(-1, 0.5, lwd=3, col=3)
+legend(-.9, legend = c("model fit", "pop. regression"), col=2:3, lwd=3)
+
+
+```
+As we would predict, the R^2 and RSE increase by quite a bit, since there is less noise (or error) in the data.
+i.
+```{r}
+#i.
+set.seed(1)
+#a.
+x <- rnorm(100)
+#b. 
+eps <- rnorm(100,0,0.75)
+#c.
+Y <- -1 + .5 * x + eps
+Y
+length(Y)
+#d.
+plot(x,Y)
+#e.
+mod5 <- lm(Y~x)
+summary(mod5)
+#f.
+plot(x, Y)
+abline(mod5, lwd=3, col=2)
+abline(-1, 0.5, lwd=3, col=3)
+legend(-.9, legend = c("model fit", "pop. regression"), col=2:3, lwd=3)
+
+
+```
+The R^2 and RSE decrease by quite a bit, since there is more error in the data, as we would expect.
+
+#15 (a-c)
+```{r}
+summary(Boston)
+attach(Boston)
+lm.zn <- lm(crim ~ zn)
+summary(lm.zn)#yes
+lm.indus <- lm(crim ~ indus)
+summary(lm.indus) #yes
+lm.chas <- lm(crim ~ chas)
+summary(lm.chas) #no
+lm.nox <- lm(crim ~ nox)
+summary(lm.nox) #yes
+lm.rm <- lm(crim ~ rm)
+summary(lm.rm)#yes
+lm.age <- lm(crim ~ age)
+summary(lm.age) #yes
+lm.dis <- lm(crim ~ dis)
+summary(lm.dis) #yes
+lm.rad <- lm(crim ~ rad)
+summary(lm.rad) 
+lm.tax <- lm(crim ~ tax)
+summary(lm.tax)
+lm.ptratio <- lm(crim ~ ptratio)
+summary(lm.ptratio)
+
+lm.lstat <- lm(crim ~ lstat)
+summary(lm.lstat)
+lm.medv <- lm(crim ~ medv)
+summary(lm.medv)
+
+```
+all variables except chas have a significant relationship with crime.
+```{r}
+plot(lm.age)
+plot(lm.indus)
+```
+The residuals are normally distributed and have a mean of zero, so there is significance in the model relationships.
+b.
+```{r}
+modall <- lm(data=Boston, crim~.)
+summary(modall)
+```
+Here, we can reject the null for medv, rad, dis, and zn based on p values.
+c. 
+```{r}
+x = c(coefficients(lm.zn)[2],
+      coefficients(lm.indus)[2],
+      coefficients(lm.chas)[2],
+      coefficients(lm.nox)[2],
+      coefficients(lm.rm)[2],
+      coefficients(lm.age)[2],
+      coefficients(lm.dis)[2],
+      coefficients(lm.rad)[2],
+      coefficients(lm.tax)[2],
+      coefficients(lm.ptratio)[2],
+      coefficients(lm.lstat)[2],
+      coefficients(lm.medv)[2])
+y = coefficients(modall)[2:13]
+plot(x, y)
+```
+The coefficient for nox is -10 in single model and 30 in the multiple regression model.
+So the results are different. In general, the variables are less significant in the multiple regression. There were a few variables that kept significance, but most lost their strong relationship when it went to multiple regression.
+
